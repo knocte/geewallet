@@ -172,26 +172,6 @@ type ElectrumIntegrationTests() =
         | _ -> failwith "Tests not ready for this currency"
 
     [<Test>]
-    member __.``configuration is correct for this client``() =
-        let shouldUseLegacyClient =
-            if Config.IsMacPlatform() then
-                false
-            elif Environment.OSVersion.Platform = PlatformID.Unix then
-                match Config.GetMonoVersion() with
-                | None ->
-                    Assert.Fail "unix platform can only be mono, as we must not be running this test in mobile..."
-                    failwith "unreachable"
-                | Some monoVersion ->
-                    if monoVersion < Version("5.18.0.240") then
-                        true
-                    else
-                        false
-            else
-                false
-
-        Assert.That(Config.LegacyUtxoTcpClientEnabled, Is.EqualTo shouldUseLegacyClient)
-
-    [<Test>]
     member __.``can connect (just check balance) to some electrum BTC servers``() =
         let currency = Currency.BTC
         let argument = GetScriptHash currency

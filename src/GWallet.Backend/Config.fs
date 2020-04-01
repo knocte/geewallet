@@ -65,14 +65,6 @@ module Config =
             return simpleVersion
         }
 
-    // TODO: make the tests instantiate Legacy or nonLegacyTcpClient themselves and test both from them
-    let LegacyUtxoTcpClientEnabled =
-        //we need this check because older versions of Mono (such as 5.16, or Ubuntu 18.04 LTS's version: 4.6.2)
-        //don't work with the new TCP client, only the legacy one works
-        match GetMonoVersion() with
-        | None -> false
-        | Some monoVersion -> monoVersion < Version("5.18.0.240")
-
     // FIXME: make FaultTolerantParallelClient accept funcs that receive this as an arg, maybe 2x-ing it when a full
     //        round of failures has happened, as in, all servers failed
     let internal DEFAULT_NETWORK_TIMEOUT = TimeSpan.FromSeconds 30.0

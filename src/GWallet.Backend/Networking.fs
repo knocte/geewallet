@@ -75,39 +75,10 @@ type ServerMisconfiguredException =
 
 module Networking =
 
-    // Ubuntu 18.04 LTS still brings a very old version of Mono (4.6.2) that doesn't have TLS1.2 support
-    let Tls12Support =
-        let monoVersion = Config.GetMonoVersion()
-        not (Option.exists (fun monoVersion -> monoVersion < Version("4.8")) monoVersion)
-
-    let FindBuggyException (ex: Exception) (newExceptionMsg): Option<Exception> =
-        let isOldMonoWithBuggyAsync =
-            let monoVersion = Config.GetMonoVersion()
-            Option.exists (fun monoVersion -> monoVersion < Version("5.0")) monoVersion
-        let rec findBuggyExceptions (ex: Exception): Option<Exception> =
-            if null = ex then
-                None
-            // see https://bugzilla.xamarin.com/show_bug.cgi?id=41133 | https://sentry.io/organizations/nblockchain/issues/918478485/
-            elif ex.GetType() = typeof<FieldAccessException> then
-                Some ex
-            // see https://github.com/Microsoft/visualfsharp/issues/2720
-            elif ex.GetType() = typeof<Exception> && ex.Message = "Unexpected no result" then
-                Some ex
-            else
-                findBuggyExceptions ex.InnerException
-
-        if not isOldMonoWithBuggyAsync then
-            None
-        else
-            match findBuggyExceptions ex with
-            | None -> None
-            | Some buggyEx ->
-                BuggyExceptionFromOldMonoVersion(newExceptionMsg, buggyEx) :> Exception |> Some
-
     let FindExceptionToRethrow (ex: Exception) (newExceptionMsg): Option<Exception> =
         match FSharpUtil.FindException<SocketException> ex with
         | None ->
-            FindBuggyException ex newExceptionMsg
+            None
         | Some socketException ->
             if socketException.ErrorCode = int SocketError.ConnectionRefused then
                 ServerRefusedException(newExceptionMsg, ex) :> Exception |> Some

@@ -167,26 +167,13 @@ let MakeAll maybeConstant =
 
 let RunFrontend (buildConfig: BinaryConfig) (maybeArgs: Option<string>) =
     let monoVersion = Map.tryFind "MonoPkgConfigVersion" buildConfigContents
-    let oldVersionOfMono =
-        match monoVersion with
-        | None ->
-            false
-        | Some version ->
-            let versionOfMonoWhereRunningExesDirectlyIsSupported = Version("5.16")
-            let currentMonoVersion = Version(version)
-            1 = versionOfMonoWhereRunningExesDirectlyIsSupported.CompareTo currentMonoVersion
 
     let pathToFrontend = Path.Combine(GetPathToFrontendBinariesDir buildConfig, DEFAULT_FRONTEND + ".exe")
 
     let fileName, finalArgs =
-        if oldVersionOfMono then
-            match maybeArgs with
-            | None | Some "" -> "mono",pathToFrontend
-            | Some args -> "mono",pathToFrontend + " " + args
-        else
-            match maybeArgs with
-            | None | Some "" -> pathToFrontend,String.Empty
-            | Some args -> pathToFrontend,args
+        match maybeArgs with
+        | None | Some "" -> pathToFrontend,String.Empty
+        | Some args -> pathToFrontend,args
 
     let startInfo = ProcessStartInfo(FileName = fileName, Arguments = finalArgs, UseShellExecute = false)
     startInfo.EnvironmentVariables.["MONO_ENV_OPTIONS"] <- "--debug"

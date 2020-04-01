@@ -60,10 +60,6 @@ type JsonRpcTcpClient (host: string, port: uint32) =
     }
 
     let rpcTcpClientInnerRequest =
-        if Config.LegacyUtxoTcpClientEnabled then
-            let tcpClient = JsonRpcSharpOld.LegacyTcpClient(ResolveHost, port)
-            tcpClient.Request
-        else
             let tcpClient =
                 JsonRpcSharp.TcpClient.JsonRpcClient(ResolveHost, int port, Config.DEFAULT_NETWORK_CONNECT_TIMEOUT)
             fun jsonRequest -> tcpClient.RequestAsync jsonRequest
@@ -83,11 +79,6 @@ type JsonRpcTcpClient (host: string, port: uint32) =
             return raise <| FSharpUtil.ReRaise ex
         | :? JsonRpcSharp.TcpClient.CommunicationUnsuccessfulException as ex ->
             return raise <| CommunicationUnsuccessfulException(ex.Message, ex)
-
-        | :? JsonRpcSharpOld.NoResponseReceivedAfterRequestException as ex ->
-            return raise <| ServerTimedOutException(exceptionMsg, ex)
-        | :? JsonRpcSharpOld.ServerUnresponsiveException as ex ->
-            return raise <| ServerTimedOutException(exceptionMsg, ex)
 
         // FIXME: we should log this one on Sentry as a warning because it's really strange, I bet it's a bug
         // on Mono that could maybe go away with higher versions of it (higher versions of Xamarin-Android), see

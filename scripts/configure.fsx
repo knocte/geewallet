@@ -22,7 +22,7 @@ let ConfigCommandCheck (commandNamesByOrderOfPreference: seq<string>) =
                 Console.WriteLine "found"
                 currentCommand
         | None ->
-            Console.Error.WriteLine (sprintf "configuration failed, please install %s" (String.Join(" or ", List.ofSeq allCommands)))
+            Console.Error.WriteLine (sprintf "configure: error, please install %s" (String.Join(" or ", List.ofSeq allCommands)))
             Environment.Exit 1
             failwith "unreachable"
     configCommandCheck commandNamesByOrderOfPreference commandNamesByOrderOfPreference
@@ -30,59 +30,56 @@ let ConfigCommandCheck (commandNamesByOrderOfPreference: seq<string>) =
 
 let rootDir = DirectoryInfo(Path.Combine(__SOURCE_DIRECTORY__, ".."))
 
-let initialConfigFile,oldVersionOfMono =
+let initialConfigFile =
     match Misc.GuessPlatform() with
     | Misc.Platform.Windows ->
         // not using Mono anyway
-        Map.empty,false
+        Map.empty
 
     | Misc.Platform.Mac ->
         ConfigCommandCheck ["mono"] |> ignore
 
         // unlikely that anyone uses old Mono versions in Mac, as it's easy to update (TODO: detect anyway)
-        Map.empty,false
+        Map.empty
 
     | Misc.Platform.Linux ->
         ConfigCommandCheck ["mono"] |> ignore
 
         let pkgConfig = "pkg-config"
         ConfigCommandCheck [pkgConfig] |> ignore
+
+        let pkgName = "mono"
+        let stableVersionOfMono = Version("6.6")
+        Console.Write (sprintf "checking for %s v%s... " pkgName (stableVersionOfMono.ToString()))
+
         let pkgConfigCmd = { Command = pkgConfig
-                             Arguments = sprintf "--modversion mono" }
+                             Arguments = sprintf "--modversion %s" pkgName }
         let processResult = Process.Execute(pkgConfigCmd, Echo.Off)
         if processResult.ExitCode <> 0 then
             failwith "Mono was found but not detected by pkg-config?"
 
         let monoVersion = processResult.Output.StdOut.Trim()
 
-        let versionOfMonoWhereArrayEmptyIsPresent = Version("5.8.1.0")
         let currentMonoVersion = Version(monoVersion)
-        let oldVersionOfMono =
-            1 = versionOfMonoWhereArrayEmptyIsPresent.CompareTo currentMonoVersion
-        Map.empty.Add("MonoPkgConfigVersion", monoVersion),oldVersionOfMono
+        if 1 = stableVersionOfMono.CompareTo currentMonoVersion then
+            Console.WriteLine "not found"
+            Console.Error.WriteLine (sprintf "configure: error, package requirements not met:")
+            Console.Error.WriteLine (sprintf "Please upgrade %s version from %s to (at least) %s"
+                                             pkgName
+                                             (currentMonoVersion.ToString())
+                                             (stableVersionOfMono.ToString()))
+            Environment.Exit 1
+        Console.WriteLine "found"
+        Map.empty.Add("MonoPkgConfigVersion", monoVersion)
 
 let targetsFileToExecuteNugetBeforeBuild = """<?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  {MaybeOverride}
   <Import Project="$([MSBuild]::GetDirectoryNameOfFileAbove($(MSBuildThisFileDirectory), NuGet.Restore.targets))\NuGet.Restore.targets"
           Condition=" '$(NuGetRestoreImported)' != 'true' " />
 </Project>
 """
-
-let nugetOverride = """<PropertyGroup>
-    <!-- workaround for https://github.com/NuGet/Home/issues/6790 to override default
-         Nuget URL specified in NuGet.Restore.targets file -->
-    <NuGetUrl>https://dist.nuget.org/win-x86-commandline/v4.5.1/nuget.exe</NuGetUrl>
-  </PropertyGroup>
-"""
-let targetsFileToGenerate =
-    if oldVersionOfMono then
-        targetsFileToExecuteNugetBeforeBuild.Replace("{MaybeOverride}", nugetOverride)
-    else
-        targetsFileToExecuteNugetBeforeBuild.Replace("{MaybeOverride}", String.Empty)
-
 File.WriteAllText(Path.Combine(rootDir.FullName, "before.gwallet.sln.targets"),
-                  targetsFileToGenerate)
+                  targetsFileToExecuteNugetBeforeBuild)
 
 let buildTool =
     match Misc.GuessPlatform() with
