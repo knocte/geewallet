@@ -1,0 +1,5 @@
+name: 'Build and upload snap'
+description: 'Build and upload snap'
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
