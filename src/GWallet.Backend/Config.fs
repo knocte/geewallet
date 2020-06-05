@@ -93,7 +93,7 @@ module Config =
             configDir.Create()
         configDir
 
-    let private GetConfigDir (currency: Currency) (accountKind: AccountKind) =
+    let internal GetConfigDir (currency: Currency) (accountKind: AccountKind) =
         let accountConfigDir = GetConfigDirForAccounts().FullName
 
         let baseConfigDir =

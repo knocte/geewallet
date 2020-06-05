@@ -1,10 +1,167 @@
 ﻿open System
 open System.IO
 open System.Linq
-open System.Text.RegularExpressions
+
+open FSharp.Core
 
 open GWallet.Backend
 open GWallet.Frontend.Console
+
+// Alternative concise definition: http://www.fssnip.net/5Y/title/Repeat-until
+let rec RetryOptionFunctionUntilSome (functionToRetry: unit -> Option<'T>): 'T =
+    let returnedValue: Option<'T> = functionToRetry ()
+    match returnedValue with
+    | Some x -> x
+    | None ->
+        RetryOptionFunctionUntilSome functionToRetry
+
+let OpenChannel() =
+    let askChannelFee (account: UtxoCoin.NormalUtxoAccount)
+                      (channelCapacity: TransferAmount)
+                      (balance: decimal)
+                      (channelCounterpartyIP: System.Net.IPEndPoint)
+                      (channelCounterpartyPubKey: PublicKey)
+                          : Async<Option<UtxoCoin.Lightning.ChannelCreationDetails>> =
+        let currency = (account :> IAccount).Currency
+        Infrastructure.LogDebug "Calling EstimateFee..."
+        let metadata =
+            try
+                UtxoCoin.Lightning.ChannelManager.EstimateChannelOpeningFee
+                     account channelCapacity
+                     |> Async.RunSynchronously
+            with
+            | InsufficientBalanceForFee _ ->
+                failwith "Estimated fee is too high for the remaining balance, \
+                          use a different account or a different amount."
+
+        let potentialChannel, channelEnvironment =
+            UtxoCoin.Lightning.ChannelManager.GenerateNewPotentialChannelDetails account channelCounterpartyPubKey
+        async {
+            let! connectionBeforeAcceptChannelRes =
+                UtxoCoin.Lightning.Network.ConnectAndHandshake channelEnvironment channelCounterpartyIP
+            match connectionBeforeAcceptChannelRes with
+            | Result.Error error ->
+                Console.WriteLine error.Message
+                return None
+            | Result.Ok connectionBeforeAcceptChannel ->
+                let passwordRef = ref "DotNetLightning shouldn't ask for password until later when user has
+                                       confirmed the funding transaction fee. So this is a placeholder."
+                let! maybeChannel =
+                    UtxoCoin.Lightning.Network.OpenChannel
+                        (account :> IAccount).Currency
+                        potentialChannel
+                        channelEnvironment
+                        connectionBeforeAcceptChannel
+                        channelCapacity
+                        metadata
+                        (fun _ -> !passwordRef)
+                        balance
+                match maybeChannel with
+                | Result.Error error ->
+                    Console.WriteLine error.Message
+                    return None
+                | Result.Ok outgoingUnfundedChannel ->
+                    Presentation.ShowFee currency metadata
+                    let confsReq = (outgoingUnfundedChannel :> UtxoCoin.Lightning.IChannelToBeOpened).ConfirmationsRequired
+                    printfn
+                        "Opening a channel with this party will require %i confirmations (~%i minutes)"
+                        confsReq
+                        (confsReq * 10u)
+                    let accept = UserInteraction.AskYesNo "Do you accept?"
+
+                    return
+                        if accept then
+                            let channelDetails: UtxoCoin.Lightning.ChannelCreationDetails =
+                                {
+                                    Client = connectionBeforeAcceptChannel.Client
+                                    Password = passwordRef
+                                    ChannelInfo = potentialChannel
+                                    OutgoingUnfundedChannel = outgoingUnfundedChannel
+                                }
+                            channelDetails |> Some
+                        else
+                            connectionBeforeAcceptChannel.Client.Dispose()
+                            None
+        }
+
+    let optionFromMaybeCachedBalance (balance: MaybeCached<decimal>): Option<decimal> =
+        match balance with
+        | NotFresh NotAvailable ->
+            Presentation.Error "Can't open channel while offline."
+            None
+        | Fresh balance | NotFresh (Cached(balance, _)) ->
+            Some balance
+
+    let lnCurrency = UtxoCoin.Lightning.Settings.Currency
+    let lnAccount = Account
+                        .GetAllActiveAccounts()
+                        .OfType<UtxoCoin.NormalUtxoAccount>()
+                        .Single(fun account -> (account :> IAccount).Currency = lnCurrency)
+    let balance = Account.GetShowableBalance lnAccount ServerSelectionMode.Fast None
+                  |> Async.RunSynchronously
+    let maybeChannelCreationDetails =
+        FSharpUtil.option {
+            let! balance = optionFromMaybeCachedBalance balance
+            let! channelCapacity = UserInteraction.AskAmount lnAccount
+            let! ipEndpoint, pubKey = UserInteraction.AskChannelCounterpartyConnectionDetails lnCurrency
+            Infrastructure.LogDebug "Getting channel fee..."
+            let! channelCreationDetails =
+                askChannelFee
+                    lnAccount
+                    channelCapacity
+                    balance
+                    ipEndpoint
+                    pubKey
+                    |> Async.RunSynchronously
+            return ipEndpoint, channelCreationDetails
+        }
+    match maybeChannelCreationDetails with
+    | Some (ipEndpoint, details) ->
+        Infrastructure.LogDebug "Opening channel..."
+        let txIdRes =
+            let attempt (): Option<Result<string, UtxoCoin.Lightning.Network.LNError>> =
+                let password = UserInteraction.AskPassword false
+                // Password is a reference, it is also inside details.Channel,
+                // so while it looks unused, it is indeed used.
+                details.Password := password
+                try
+                    let txIdRes =
+                        UtxoCoin.Lightning.Network.ContinueFromAcceptChannelAndSave
+                            lnAccount
+                            ipEndpoint
+                            details
+                            |> Async.RunSynchronously
+                    details.Client.Dispose()
+                    Some txIdRes
+                with
+                | :? InvalidPassword ->
+                    printfn "Invalid password, try again."
+                    None
+            RetryOptionFunctionUntilSome attempt
+        match txIdRes with
+        | Result.Error error ->
+            Console.WriteLine error.Message
+        | Result.Ok txId ->
+            let uri = BlockExplorer.GetTransaction lnCurrency txId
+            printfn "A funding transaction was broadcast: %A" uri
+        UserInteraction.PressAnyKeyToContinue()
+    | None ->
+        // Error message printed already
+        UserInteraction.PressAnyKeyToContinue()
+
+let AcceptChannel() =
+    let lightningAccount = Account
+                               .GetAllActiveAccounts()
+                               .OfType<UtxoCoin.NormalUtxoAccount>()
+                               .Single(fun account ->
+                                   (account :> IAccount).Currency = UtxoCoin.Lightning.Settings.Currency)
+    let nodeUrl,job = UtxoCoin.Lightning.Network.AcceptTheirChannel lightningAccount
+    Console.WriteLine (sprintf "This node, connect to it: %s" nodeUrl)
+    match job |> Async.RunSynchronously with
+    | Result.Error error ->
+        Console.WriteLine error.Message
+    | Result.Ok () ->
+        ()
 
 let rec TrySendAmount (account: NormalAccount) transactionMetadata destination amount =
     let password = UserInteraction.AskPassword false
@@ -321,6 +478,10 @@ let rec PerformOperation (numActiveAccounts: uint32) (numHotAccounts: uint32) =
         PairToWatchWallet()
     | Operations.Options ->
         WalletOptions()
+    | Operations.OpenChannel ->
+        OpenChannel()
+    | Operations.AcceptChannel ->
+        AcceptChannel()
     | _ -> failwith "Unreachable"
 
 let rec GetAccountOfSameCurrency currency =
@@ -358,6 +519,37 @@ let rec CheckArchivedAccountsAreEmpty(): bool =
 
     not (archivedAccountsInNeedOfAction.Any())
 
+let private NotReadyReasonToString (reason: UtxoCoin.Lightning.ChannelNotReadyReason): string =
+    sprintf "%i out of %i confirmations" reason.CurrentConfirmations reason.NeededConfirmations
+
+let private CheckChannelStatus (currency, channelFile: FileInfo, channelFileId: int): Async<seq<string>> =
+    async {
+        let! channelStatusRes = UtxoCoin.Lightning.Network.LoadChannelCheckingChannelMessage currency channelFile
+        match channelStatusRes with
+        | Result.Error error ->
+            return seq {
+                yield error.Message
+            }
+        | Result.Ok channelStatus ->
+            return
+                match channelStatus with
+                | UtxoCoin.Lightning.ChannelStatus.UnusableChannelWithReason (txIdHex, notReadyReason) ->
+                    let reasonString = NotReadyReasonToString notReadyReason
+                    let msg =
+                        sprintf
+                            "Channel %i opening in progress (%s): %s%s"
+                            channelFileId reasonString txIdHex Environment.NewLine
+                    seq { yield msg }
+                | UtxoCoin.Lightning.ChannelStatus.UsableChannel _ ->
+                    seq { yield sprintf "Channel %i is open%s" channelFileId Environment.NewLine }
+    }
+
+let private CheckChannelStatuses(): Async<seq<string>> =
+    async {
+        let jobs = UtxoCoin.Lightning.ChannelManager.ListSavedChannels () |> Seq.map CheckChannelStatus
+        let! statuses = Async.Parallel jobs
+        return Seq.collect id statuses
+    }
 
 let rec ProgramMainLoop() =
     let activeAccounts = Account.GetAllActiveAccounts()
@@ -371,9 +563,20 @@ let rec ProgramMainLoop() =
 
     Console.WriteLine ()
     Console.WriteLine "*** STATUS ***"
-    let lines =
-        UserInteraction.DisplayAccountStatuses(WhichAccount.All activeAccounts)
-            |> Async.RunSynchronously
+    let statusAndChannelJob =
+        seq {
+            yield UserInteraction.DisplayAccountStatuses (WhichAccount.All activeAccounts)
+            yield CheckChannelStatuses()
+        } |> Async.Parallel
+    let results = Async.RunSynchronously statusAndChannelJob
+    let accountStatuses: seq<string> = results.[0]
+    let channelStatuses: seq<string> = results.[1]
+    let lines: seq<string> =
+        seq {
+            yield! accountStatuses
+            yield Environment.NewLine
+            yield! channelStatuses
+        }
     Console.WriteLine (String.concat Environment.NewLine lines)
     Console.WriteLine ()
 

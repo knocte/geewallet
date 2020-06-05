@@ -227,6 +227,36 @@ module FSharpUtil =
                 findExInSeq aggEx.InnerExceptions
             | _ -> FindException<'T>(ex.InnerException)
 
+    // Searches through an exception tree and ensures that all the leaves of
+    // the tree have type 'T. Returns these 'T exceptions as a sequence, or
+    // otherwise re-raises the original exception if there are any non-'T-based
+    // exceptions in the tree.
+    let public FindSingleException<'T when 'T:> Exception>(ex: Exception): seq<'T> =
+        let rec findSingleExceptionOpt(ex: Exception): Option<seq<'T>> =
+            let rec findSingleExceptionInSeq(sq: seq<Exception>)(acc: seq<'T>): Option<seq<'T>> =
+                match Seq.tryHead sq with
+                | Some head ->
+                    match findSingleExceptionOpt head with
+                    | Some exs ->
+                        findSingleExceptionInSeq (Seq.tail sq) (Seq.concat [acc; exs])
+                    | None -> None
+                | None -> Some acc
+            let findSingleInnerException(ex: Exception): Option<seq<'T>> =
+                if null = ex.InnerException then
+                    None
+                else
+                    findSingleExceptionOpt ex.InnerException
+            match ex with
+            | :? 'T as specificEx -> Some <| Seq.singleton specificEx
+            | :? AggregateException as aggEx ->
+                findSingleExceptionInSeq aggEx.InnerExceptions Seq.empty
+            | _ -> findSingleInnerException ex
+        match findSingleExceptionOpt ex with
+        | Some exs -> exs
+        | None ->
+            ReRaise ex
+            |> ignore<Exception>
+            failwith "unreachable"
 
 #if STRICTER_COMPILATION_BUT_WITH_REFLECTION_AT_RUNTIME
 // http://stackoverflow.com/a/28466431/6503091

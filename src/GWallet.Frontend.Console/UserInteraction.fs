@@ -4,6 +4,7 @@ open System
 open System.IO
 open System.Linq
 open System.Globalization
+open System.Net
 
 open GWallet.Backend
 
@@ -18,6 +19,8 @@ type internal Operations =
     | ArchiveAccount     = 7
     | PairToWatchWallet  = 8
     | Options            = 9
+    | OpenChannel        = 10
+    | AcceptChannel      = 11
 
 type WhichAccount =
     All of seq<IAccount> | MatchingWith of IAccount
@@ -76,6 +79,8 @@ module UserInteraction =
         | Operations.ArchiveAccount
         | Operations.PairToWatchWallet
         | Operations.Options
+        | Operations.OpenChannel
+        | Operations.AcceptChannel
             ->
                 not noAccountsAtAll
         | Operations.CreateAccounts -> noHotAccounts
@@ -633,3 +638,63 @@ module UserInteraction =
                 with
                 | _ -> AskAccount()
             theAccountChosen
+
+    // Throws FormatException
+    let private AskChannelCounterpartyIP(): IPAddress =
+        Console.Write "Channel counterparty IP: "
+        let ipString = Console.ReadLine().Trim()
+        IPAddress.Parse ipString
+
+    // Throws FormatException
+    let private ParsePortString(portString: string): int =
+        match UInt32.TryParse portString with
+        | false, _ ->
+            raise <| FormatException "Could not parse port number as unsigned 32-bit integer"
+        | true, portParsed ->
+            int portParsed
+
+    // Throws FormatException
+    let private AskChannelCounterpartyPort(): int =
+        Console.Write "Channel counterparty port: "
+        let portString = Console.ReadLine().Trim()
+        ParsePortString portString
+
+    // Throws FormatException
+    let private AskChannelCounterpartyIPAndPort(): IPEndPoint =
+        IPEndPoint(AskChannelCounterpartyIP(), AskChannelCounterpartyPort())
+
+    // Throws FormatException
+    let private AskChannelCounterpartyPubKey (currency: Currency): PublicKey =
+        Console.Write "Channel counterparty public key in hexadecimal notation: "
+        let pubKeyHex = Console.ReadLine().Trim()
+        PublicKey(pubKeyHex, currency)
+
+    // Throws FormatException
+    let private AskChannelCounterpartyQRString (currency: Currency): IPEndPoint * PublicKey =
+        Console.Write "Channel counterparty QR connection string contents: "
+        let connectionString = Console.ReadLine().Trim()
+        let atIndex = connectionString.IndexOf "@"
+        if atIndex = -1 then
+            raise <| FormatException "No at-sign (@) in connection string, try again"
+        let pubKeyHex, ipPortCombo = connectionString.[..atIndex - 1], connectionString.[atIndex + 1..]
+        let portSeparatorIndex = ipPortCombo.LastIndexOf ':'
+        if portSeparatorIndex = -1 then
+            raise <| FormatException "No colon (:) after at-sign (@) in connection string, try again"
+        let ipString, portString = ipPortCombo.[..portSeparatorIndex - 1], ipPortCombo.[portSeparatorIndex + 1..]
+        let ipAddress = IPAddress.Parse ipString
+        let port: int = ParsePortString portString
+        IPEndPoint(ipAddress, port), PublicKey(pubKeyHex, currency)
+
+    let AskChannelCounterpartyConnectionDetails (currency: Currency): Option<IPEndPoint * PublicKey> =
+        let useQRString = AskYesNo "Do you want to supply the channel counterparty connection string as used embedded in QR codes?"
+        try
+            if useQRString then
+                Some <| AskChannelCounterpartyQRString currency
+            else
+                let ipEndpoint = AskChannelCounterpartyIPAndPort()
+                let pubKey = AskChannelCounterpartyPubKey currency
+                Some (ipEndpoint, pubKey)
+        with
+        | :? FormatException as e ->
+            Presentation.Error e.Message
+            None

@@ -62,6 +62,7 @@
     <Compile Include="Config.fs" />
     <Compile Include="Networking.fs" />
     <Compile Include="JsonRpcTcpClient.fs" />
+    <Compile Include="PublicKey.fs" />
     <Compile Include="IBlockchainFeeInfo.fs" />
     <Compile Include="TransferAmount.fs" />
     <Compile Include="Infrastructure.fs" />
@@ -78,6 +79,13 @@
     <Compile Include="UtxoCoin\UtxoCoinMinerFee.fs" />
     <Compile Include="UtxoCoin\TransactionTypes.fs" />
     <Compile Include="UtxoCoin\UtxoCoinAccount.fs" />
+    <Compile Include="UtxoCoin\Lightning\JsonMarshalling.fs" />
+    <Compile Include="UtxoCoin\Lightning\ScriptManagement.fs" />
+    <Compile Include="UtxoCoin\Lightning\Settings.fs" />
+    <Compile Include="UtxoCoin\Lightning\SerializedChannel.fs" />
+    <Compile Include="UtxoCoin\Lightning\FeeEstimator.fs" />
+    <Compile Include="UtxoCoin\Lightning\ChannelManagement.fs" />
+    <Compile Include="UtxoCoin\Lightning\Network.fs" />
     <Compile Include="Ether\EtherExceptions.fs" />
     <Compile Include="Ether\EtherMinerFee.fs" />
     <Compile Include="Ether\TransactionMetadata.fs" />
@@ -105,7 +113,7 @@
     </Reference>
     <Reference Include="System.Numerics" />
     <Reference Include="System.Runtime.CompilerServices.Unsafe">
-      <HintPath>..\..\packages\System.Runtime.CompilerServices.Unsafe.4.5.0\lib\netstandard1.0\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
+      <HintPath>..\..\packages\System.Runtime.CompilerServices.Unsafe.4.5.2\lib\netstandard2.0\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
     </Reference>
     <Reference Include="System.Xml.Linq" />
     <Reference Include="Common.Logging.Core">
@@ -125,7 +133,7 @@
     </Reference>
     <Reference Include="System.Configuration" />
     <Reference Include="System.Memory">
-      <HintPath>..\..\packages\System.Memory.4.5.1\lib\netstandard1.1\System.Memory.dll</HintPath>
+      <HintPath>..\..\packages\System.Memory.4.5.3\lib\netstandard2.0\System.Memory.dll</HintPath>
     </Reference>
     <Reference Include="System.Buffers">
       <HintPath>..\..\packages\System.Buffers.4.5.0\lib\netstandard1.1\System.Buffers.dll</HintPath>
@@ -260,6 +268,15 @@
     </Reference>
     <Reference Include="HtmlAgilityPack">
       <HintPath>..\..\packages\HtmlAgilityPack.1.11.24\lib\Net45\HtmlAgilityPack.dll</HintPath>
+    </Reference>
+    <Reference Include="DotNetLightning.Core">
+      <HintPath>..\..\packages\DotNetLightning.1.1.2-date20200609-0909-git-e6c4820\lib\netstandard2.0\DotNetLightning.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="InternalBech32Encoder">
+      <HintPath>..\..\packages\DotNetLightning.1.1.2-date20200609-0909-git-e6c4820\lib\netstandard2.0\InternalBech32Encoder.dll</HintPath>
+    </Reference>
+    <Reference Include="ResultUtils">
+      <HintPath>..\..\packages\DotNetLightning.1.1.2-date20200609-0909-git-e6c4820\lib\netstandard2.0\ResultUtils.dll</HintPath>
     </Reference>
   </ItemGroup>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
