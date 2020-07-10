@@ -85,6 +85,23 @@ module FSharpUtil =
 
         member __.Value = value
 
+
+    let UnwrapResult<'TRes, 'TError> (result: Result<'TRes, 'TError>)
+                                     (msg: string)
+                                         : 'TRes =
+        match result with
+        | Ok value -> value
+        | Error err ->
+            failwith <| UwpHacks.SPrintF2 "error unwrapping Result %s: %s" msg (err.ToString())
+
+    let UnwrapOption<'T> (opt: Option<'T>)
+                         (msg: string)
+                             : 'T =
+        match opt with
+        | Some value -> value
+        | None ->
+            failwith <| UwpHacks.SPrintF1 "error unwrapping Option: %s" msg
+
     module AsyncExtensions =
 
         let MixedParallel2 (a: Async<'T1>) (b: Async<'T2>): Async<'T1*'T2> =

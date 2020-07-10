@@ -6,21 +6,32 @@ open System.Net
 open DotNetLightning.Serialize
 
 open GWallet.Backend
+open FSharpUtil
 
 open Newtonsoft.Json
 
-
 module JsonMarshalling =
+
+    type internal ChannelIdentifierConverter() =
+        inherit JsonConverter<ChannelIdentifier>()
+
+        override __.ReadJson(reader: JsonReader, _: Type, _: ChannelIdentifier, _: bool, serializer: JsonSerializer) =
+            let serializedChannelId = serializer.Deserialize<string> reader
+            serializedChannelId
+            |> NBitcoin.uint256
+            |> DotNetLightning.Utils.Primitives.ChannelId
+            |> ChannelIdentifier.FromDnl
+
+        override __.WriteJson(writer: JsonWriter, state: ChannelIdentifier, serializer: JsonSerializer) =
+            let serializedChannelId: string = state.DnlChannelId.Value.ToString()
+            serializer.Serialize(writer, serializedChannelId)
 
     type internal FeatureBitJsonConverter() =
         inherit JsonConverter<FeatureBit>()
 
         override __.ReadJson(reader: JsonReader, _: Type, _: FeatureBit, _: bool, serializer: JsonSerializer): FeatureBit =
             let serializedFeatureBit = serializer.Deserialize<string> reader
-            let parsed = FeatureBit.TryParse serializedFeatureBit
-            match parsed with
-            | Ok featureBit -> featureBit
-            | _ -> failwith "error decoding feature bit"
+            UnwrapResult (FeatureBit.TryParse serializedFeatureBit) "error decoding feature bit"
 
         override __.WriteJson(writer: JsonWriter, state: FeatureBit, serializer: JsonSerializer) =
             serializer.Serialize(writer, state.ToString())
@@ -59,9 +70,11 @@ module JsonMarshalling =
         let ipAddressConverter = IPAddressJsonConverter()
         let ipEndPointConverter = IPEndPointJsonConverter()
         let featureBitConverter = FeatureBitJsonConverter()
+        let channelIdentifierConverter = ChannelIdentifierConverter()
         settings.Converters.Add ipAddressConverter
         settings.Converters.Add ipEndPointConverter
         settings.Converters.Add featureBitConverter
+        settings.Converters.Add channelIdentifierConverter
         NBitcoin.JsonConverters.Serializer.RegisterFrontConverters settings
         settings
 
