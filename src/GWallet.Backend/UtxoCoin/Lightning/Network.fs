@@ -186,36 +186,41 @@ type internal TransportStream =
         }
         read buf 0
 
-    static member internal ConnectFromTransportListener (transportListener: TransportListener)
-                                                        (peerNodeId: NodeId)
-                                                        (peerId: PeerId)
-                                                            : Async<Result<TransportStream, HandshakeError>> = async {
-        let nodeSecretKey = transportListener.NodeSecret.PrivateKey
-        let peerEndpoint = peerId.Value :?> IPEndPoint
-        let client = new TcpClient (peerId.Value.AddressFamily)
+    static member private TcpConnect (localEndPoint: IPEndPoint)
+                                     (remoteEndPoint: IPEndPoint)
+                                         : Async<Result<TcpClient, seq<SocketException>>> = async {
+        let client = new TcpClient (remoteEndPoint.AddressFamily)
         client.Client.ExclusiveAddressUse <- false
         client.Client.SetSocketOption(
             SocketOptionLevel.Socket,
             SocketOptionName.ReuseAddress,
             true
         )
-        client.Client.Bind(transportListener.LocalIPEndPoint)
-        Infrastructure.LogDebug <| SPrintF1 "Connecting over TCP to %A..." peerEndpoint
-        let! connectRes = async {
-            try
-                do! client.ConnectAsync(peerEndpoint.Address, peerEndpoint.Port) |> Async.AwaitTask
-                return Ok()
-            with
-            | ex ->
-                let socketExceptions = FindSingleException<SocketException> ex
-                return Error <| TcpConnect socketExceptions
+        client.Client.Bind(localEndPoint)
+        Infrastructure.LogDebug <| SPrintF1 "Connecting over TCP to %A..." remoteEndPoint
+        try
+            do! client.ConnectAsync(remoteEndPoint.Address, remoteEndPoint.Port) |> Async.AwaitTask
+            return Ok client
+        with
+        | ex ->
+            client.Close()
+            let socketExceptions = FindSingleException<SocketException> ex
+            return Error socketExceptions
         }
 
+    static member internal ConnectFromTransportListener (transportListener: TransportListener)
+                                                        (peerNodeId: NodeId)
+                                                        (peerId: PeerId)
+                                                            : Async<Result<TransportStream, HandshakeError>> = async {
+        let peerEndpoint = peerId.Value :?> IPEndPoint
+        let! connectRes = TransportStream.TcpConnect transportListener.LocalIPEndPoint peerEndpoint
+
         match connectRes with
-        | Error err -> return Error err
-        | Ok () ->
+        | Error err -> return Error <| TcpConnect err
+        | Ok client ->
             let stream = client.GetStream()
 
+            let nodeSecretKey = transportListener.NodeSecret.PrivateKey
             let peer = Peer.CreateOutbound(peerId, peerNodeId, nodeSecretKey)
             let act1, peerEncryptor = PeerChannelEncryptor.getActOne peer.ChannelEncryptor
             Debug.Assert((TransportStream.bolt08ActOneLength = act1.Length), "act1 has wrong length")
