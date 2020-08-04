@@ -26,6 +26,7 @@ open GWallet.Backend.UtxoCoin.Lightning
 
 [<TestFixture>]
 type LN() =
+    do Config.SetRunModeToTesting()
 
     let WatchOutput (proc: Process) (msgToWaitFor: List<string>) (verbose: bool): List<AutoResetEvent> =
         // triggers the events returned corresponding to the trigger strings passed

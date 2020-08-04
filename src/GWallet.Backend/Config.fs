@@ -14,7 +14,7 @@ module Config =
 
     type internal RunMode =
         | Normal
-        | Testing
+        | Testing of DirectoryInfo
 
 #if DEBUG
     let mutable private runMode: RunMode =
@@ -23,9 +23,14 @@ module Config =
 #endif
         RunMode.Normal
 
-#if DEBUG
     let public SetRunModeToTesting() =
-        runMode <- RunMode.Testing
+#if DEBUG
+        if runMode <> RunMode.Normal then
+            failwith "Cannot set RunMode more than once"
+        let testDir = DirectoryInfo <| Path.Combine(Path.GetTempPath(), Path.GetRandomFileName())
+        runMode <- RunMode.Testing testDir
+#else
+        failwith "Run mode cannot be set to testing when built in release mode"
 #endif
 
     // we might want to test with TestNet at some point, so this below is the key:
@@ -33,7 +38,7 @@ module Config =
     let BitcoinNet() =
         match runMode with
         | Normal -> NBitcoin.Network.Main
-        | Testing -> NBitcoin.Network.RegTest
+        | Testing _ -> NBitcoin.Network.RegTest
     let LitecoinNet = NBitcoin.Altcoins.Litecoin.Instance.Mainnet
     let EtcNet = Nethereum.Signer.Chain.ClassicMainNet
     let EthNet = Nethereum.Signer.Chain.MainNet
@@ -92,8 +97,12 @@ module Config =
     let internal NUMBER_OF_RETRIES_TO_SAME_SERVERS = 3u
 
     let internal GetConfigDirForThisProgram() =
-        let configPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)
-        let configDir = DirectoryInfo(Path.Combine(configPath, "gwallet"))
+        let configDir =
+            match runMode with
+            | RunMode.Normal ->
+                let configPath = Environment.GetFolderPath Environment.SpecialFolder.ApplicationData
+                Path.Combine(configPath, "gwallet") |> DirectoryInfo
+            | RunMode.Testing configDir -> configDir
         if not configDir.Exists then
             configDir.Create()
         configDir
