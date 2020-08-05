@@ -58,7 +58,11 @@ module Account =
     let GetAllActiveAccounts(): seq<IAccount> =
         Config.PropagateEthAccountInfoToMissingTokensAccounts()
 
-        let allCurrencies = Currency.GetAll()
+        let allCurrencies =
+            if Config.BitcoinNet() = NBitcoin.Network.RegTest then
+                seq { yield Currency.BTC }
+            else
+                Currency.GetAll()
 
         seq {
             for currency in allCurrencies do

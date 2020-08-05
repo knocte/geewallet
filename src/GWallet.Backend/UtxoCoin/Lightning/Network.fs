@@ -82,7 +82,7 @@ module Network =
                     Environment.NewLine + "Hint: You can try from a new node identity."
                 | [| 02uy |] ->
                     "Node is not in sync to latest blockchain blocks." +
-                        if Config.BitcoinNet = Network.RegTest then
+                        if Config.BitcoinNet() = Network.RegTest then
                             Environment.NewLine + "Hint: Try mining some blocks before opening."
                         else
                             String.Empty

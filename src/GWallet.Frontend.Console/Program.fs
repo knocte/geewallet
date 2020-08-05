@@ -614,6 +614,13 @@ let main argv =
     match argv.Length with
     | 0 ->
         NormalStartWithNoParameters()
+    | 1 when argv.[0] = "--regtest-on-localhost" ->
+#if DEBUG
+        Config.SetRunModeToTesting()
+        NormalStartWithNoParameters()
+#else
+        failwith "Regtest was requested on command line but Geewallet can only use regtest when compiled with -p:Configuration=Debug"
+#endif
     | 1 when argv.[0] = "--update-servers-file" ->
         UpdateServersFile()
     | 1 when argv.[0] = "--update-servers-stats" ->

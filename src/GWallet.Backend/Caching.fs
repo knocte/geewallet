@@ -550,19 +550,36 @@ module Caching =
             )
 
         member __.GetServers (currency: Currency): seq<ServerDetails> =
-            lock cacheFiles.ServerStats (fun _ ->
-                match sessionServerRanking.TryFind currency with
-                | None ->
-                    failwith <| SPrintF1 "Initialization of servers' cache failed? currency %A not found" currency
-                | Some servers -> servers
-            )
+            if Config.BitcoinNet() = NBitcoin.Network.RegTest && currency = Currency.BTC then
+                let ipv6Localhost = "::1"
+                seq [
+                    {
+                        ServerInfo =
+                            {
+                                NetworkPath = ipv6Localhost
+                                ConnectionType =
+                                    {
+                                        Encrypted = false
+                                        Protocol = Tcp 50001u
+                                    }
+                            }
+                        CommunicationHistory = None
+                    }
+                ]
+            else
+                lock cacheFiles.ServerStats (fun _ ->
+                    match sessionServerRanking.TryFind currency with
+                    | None ->
+                        failwith <| SPrintF1 "Initialization of servers' cache failed? currency %A not found" currency
+                    | Some servers -> servers
+                )
 
         member __.ExportServers (): Option<string> =
             lock cacheFiles.ServerStats (fun _ ->
                 LoadFromDiskInner cacheFiles.ServerStats
             )
 
-        member __.BootstrapServerStatsFromTrustedSource(): Async<unit> =
+        member private __.BootstrapServerStatsFromTrustedSourceInternal(): Async<unit> =
             let downloadFile url: Async<Option<string>> =
                 let tryDownloadFile url: Async<string> =
                     async {
@@ -625,6 +642,14 @@ module Caching =
                         let savedServerStats = SaveServerRankingsToDisk lastServerStats
                         sessionServerRanking <- savedServerStats
                     )
+            }
+
+        member self.BootstrapServerStatsFromTrustedSource(): Async<unit> =
+            async {
+                if Config.BitcoinNet() = NBitcoin.Network.RegTest then
+                    return ()
+                else
+                    return! self.BootstrapServerStatsFromTrustedSourceInternal()
             }
 
         member __.FirstRun
