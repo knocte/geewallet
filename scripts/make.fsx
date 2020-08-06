@@ -408,6 +408,7 @@ match maybeTarget with
             String.Format("scripts{0}" +
                           "src{1}GWallet.Frontend.Console{0}" +
                           "src{1}GWallet.Backend.Tests{0}" +
+                          "src{1}GWallet.Backend.Tests.End2End{0}" +
                           "src{1}GWallet.Backend{1}FSharpUtil.fs",
                           Path.PathSeparator, Path.DirectorySeparatorChar)
 
@@ -427,6 +428,9 @@ match maybeTarget with
     let SanityCheckNugetPackages () =
 
         let DEFAULT_NUGET_PACKAGES_SUBFOLDER_NAME = "packages"
+
+        let notBlacklist (dir: DirectoryInfo): bool =
+            not <| dir.FullName.Contains "End2End"
 
         let notSubmodule (dir: DirectoryInfo): bool =
             let getSubmoduleDirsForThisRepo (): seq<DirectoryInfo> =
@@ -449,7 +453,8 @@ match maybeTarget with
                     for file in dir.EnumerateFiles () do
                         if file.Name.ToLower () = "packages.config" then
                             yield file
-                    for subdir in dir.EnumerateDirectories().Where notSubmodule do
+                    let notDiscard = fun d -> notSubmodule d && notBlacklist d
+                    for subdir in dir.EnumerateDirectories().Where notDiscard do
                         for file in findPackagesDotConfigFiles subdir do
                             yield file
                 }

@@ -1,0 +1,144 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{976C2EC9-C37C-4B9C-A854-5F08F9665D5B}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <RootNamespace>GWallet.Backend.Tests.End2End</RootNamespace>
+    <AssemblyName>GWallet.Backend.Tests.End2End</AssemblyName>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
+    <TargetFSharpCoreVersion>4.7.0.0</TargetFSharpCoreVersion>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <Name>GWallet.Backend.Tests.End2End</Name>
+    <TargetFrameworkProfile />
+    <OtherFlags>
+        /warnon:1182
+        /warnon:3218
+        /warnon:0193
+    </OtherFlags>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <Tailcalls>false</Tailcalls>
+    <OutputPath>bin\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <WarningLevel>3</WarningLevel>
+    <DocumentationFile>bin\$(Configuration)\$(AssemblyName).XML</DocumentationFile>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <Tailcalls>true</Tailcalls>
+    <OutputPath>bin\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <WarningLevel>3</WarningLevel>
+    <DocumentationFile>bin\$(Configuration)\$(AssemblyName).XML</DocumentationFile>
+  </PropertyGroup>
+  <PropertyGroup>
+    <MinimumVisualStudioVersion Condition="'$(MinimumVisualStudioVersion)' == ''">11</MinimumVisualStudioVersion>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(FSharpTargetsPath)' == '' AND Exists('$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\FSharp\Microsoft.FSharp.Targets') ">
+    <FSharpTargetsPath>$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\FSharp\Microsoft.FSharp.Targets</FSharpTargetsPath>
+  </PropertyGroup>
+  <Import Condition="'$(FSharpTargetsPath)' != ''" Project="$(FSharpTargetsPath)" />
+  <Target Name="BeforeBuild">
+    <Message Condition="'$(FSharpTargetsPath)' == ''" Importance="High" Text="F# SDK path was not found!" />
+  </Target>
+  <ItemGroup>
+    <Content Include="..\GWallet.Frontend.Console\App.config">
+      <Link>App.config</Link>
+    </Content>
+    <Compile Include="..\GWallet.Backend\Properties\CommonAssemblyInfo.fs">
+      <Link>Properties\CommonAssemblyInfo.fs</Link>
+    </Compile>
+    <Compile Include="LN.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="mscorlib" />
+    <Reference Include="nunit.framework">
+      <HintPath>..\..\packages\NUnit.2.6.4\lib\nunit.framework.dll</HintPath>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Numerics" />
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>..\..\packages\Newtonsoft.Json.11.0.2\lib\net45\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <ProjectReference Include="..\GWallet.Backend\GWallet.Backend.fsproj">
+      <Project>{96F9B3E5-11F8-4F5F-AADC-51D0D995B3D2}</Project>
+      <Name>GWallet.Backend</Name>
+    </ProjectReference>
+    <Reference Include="System.Buffers">
+      <HintPath>..\..\packages\System.Buffers.4.5.0\lib\netstandard1.1\System.Buffers.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Security.Cryptography.Encoding">
+      <HintPath>..\..\packages\System.Security.Cryptography.Encoding.4.3.0\lib\net46\System.Security.Cryptography.Encoding.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Security.Cryptography.Primitives">
+      <HintPath>..\..\packages\System.Security.Cryptography.Primitives.4.3.0\lib\net46\System.Security.Cryptography.Primitives.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Security.Cryptography.Algorithms">
+      <HintPath>..\..\packages\System.Security.Cryptography.Algorithms.4.3.0\lib\net46\System.Security.Cryptography.Algorithms.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Security.Cryptography.X509Certificates">
+      <HintPath>..\..\packages\System.Security.Cryptography.X509Certificates.4.3.0\lib\net46\System.Security.Cryptography.X509Certificates.dll</HintPath>
+    </Reference>
+    <Reference Include="FSharp.Core">
+      <HintPath>..\..\packages\FSharp.Core.4.7.0\lib\net45\FSharp.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="NBitcoin.Altcoins">
+      <HintPath>..\..\packages\NBitcoin.Altcoins.2.0.5.1\lib\net452\NBitcoin.Altcoins.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Extensions.Logging.Abstractions">
+      <HintPath>..\..\packages\Microsoft.Extensions.Logging.Abstractions.1.0.2\lib\netstandard1.1\Microsoft.Extensions.Logging.Abstractions.dll</HintPath>
+    </Reference>
+    <Reference Include="NBitcoin">
+      <HintPath>..\..\packages\NBitcoin.5.0.13\lib\net461\NBitcoin.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Runtime">
+      <HintPath>..\..\packages\System.Runtime.4.3.0\lib\net462\System.Runtime.dll</HintPath>
+    </Reference>
+    <Reference Include="System.ComponentModel.Composition" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="BTCPayServer.Lightning.All">
+      <HintPath>..\..\packages\BTCPayServer.Lightning.All.1.1.13\lib\netstandard2.0\BTCPayServer.Lightning.All.dll</HintPath>
+    </Reference>
+    <Reference Include="BTCPayServer.Lightning.Common">
+      <HintPath>..\..\packages\BTCPayServer.Lightning.Common.1.1.0.22\lib\netstandard2.0\BTCPayServer.Lightning.Common.dll</HintPath>
+    </Reference>
+    <Reference Include="BTCPayServer.Lightning.LND">
+      <HintPath>..\..\packages\BTCPayServer.Lightning.LND.1.1.0.29\lib\netstandard2.0\BTCPayServer.Lightning.LND.dll</HintPath>
+    </Reference>
+    <Reference Include="BTCPayServer.Lightning.Charge">
+      <HintPath>..\..\packages\BTCPayServer.Lightning.Charge.1.1.0.22\lib\netstandard2.0\BTCPayServer.Lightning.Charge.dll</HintPath>
+    </Reference>
+    <Reference Include="BTCPayServer.Lightning.CLightning">
+      <HintPath>..\..\packages\BTCPayServer.Lightning.CLightning.1.1.7\lib\netstandard2.0\BTCPayServer.Lightning.CLightning.dll</HintPath>
+    </Reference>
+    <Reference Include="BTCPayServer.Lightning.Eclair">
+      <HintPath>..\..\packages\BTCPayServer.Lightning.Eclair.1.1.0.10\lib\netstandard2.0\BTCPayServer.Lightning.Eclair.dll</HintPath>
+    </Reference>
+    <Reference Include="BTCPayServer.Lightning.Ptarmigan">
+      <HintPath>..\..\packages\BTCPayServer.Lightning.Ptarmigan.1.0.0.8\lib\netstandard2.0\BTCPayServer.Lightning.Ptarmigan.dll</HintPath>
+    </Reference>
+    <Reference Include="DotNetLightning.Core">
+      <HintPath>..\..\packages\DotNetLightning.1.1.2-date20200609-0909-git-e6c4820\lib\netstandard2.0\DotNetLightning.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Memory">
+      <HintPath>..\..\packages\System.Memory.4.5.3\lib\netstandard2.0\System.Memory.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Runtime.CompilerServices.Unsafe">
+      <HintPath>..\..\packages\System.Runtime.CompilerServices.Unsafe.4.5.2\lib\netstandard2.0\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+  <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
+       Other similar extension points exist, see Microsoft.Common.targets.
+  <Target Name="AfterBuild">
+  </Target>
+  -->
+</Project>
