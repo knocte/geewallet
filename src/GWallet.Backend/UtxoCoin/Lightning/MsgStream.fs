@@ -131,6 +131,24 @@ type internal MsgStream =
             | Ok (initMsg, msgStream) -> return Ok (initMsg, msgStream)
     }
 
+    static member internal ConnectAcceptFromTransportListener (transportListener: TransportListener)
+                                                              (peerNodeId: NodeId)
+                                                              (peerId: PeerId)
+                                                                  : Async<Result<InitMsg * MsgStream, ConnectError>> = async {
+        let! transportStreamRes =
+            TransportStream.ConnectAcceptFromTransportListener
+                transportListener
+                peerNodeId
+                peerId
+        match transportStreamRes with
+        | Error handshakeError -> return Error <| Handshake handshakeError
+        | Ok transportStream ->
+            let! initializeRes = MsgStream.InitializeTransportStream transportStream
+            match initializeRes with
+            | Error initializeError -> return Error <| Initialize initializeError
+            | Ok (initMsg, msgStream) -> return Ok (initMsg, msgStream)
+    }
+
     member internal self.RemoteNodeId
         with get(): NodeId = self.TransportStream.RemoteNodeId
 

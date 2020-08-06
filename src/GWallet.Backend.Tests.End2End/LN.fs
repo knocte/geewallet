@@ -559,7 +559,6 @@ type LN() =
     }
 
     [<Test>]
-    [<Ignore "WIP">]
     member __.``can accept channel from LND``() = Async.RunSynchronously <| async {
         use! walletInstance = WalletInstance.New()
         use bitcoind = Bitcoind.Start()

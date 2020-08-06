@@ -63,6 +63,20 @@ and internal PeerNode =
                 return! PeerNode.AcceptFromTransportListener transportListener peerNodeId
     }
 
+    static member internal ConnectAcceptFromTransportListener (transportListener: TransportListener)
+                                                              (peerNodeId: NodeId)
+                                                              (peerId: PeerId)
+                                                                  : Async<Result<PeerNode, ConnectError>> = async {
+        let! connectRes = MsgStream.ConnectAcceptFromTransportListener transportListener peerNodeId peerId
+        match connectRes with
+        | Error connectError -> return Error connectError
+        | Ok (initMsg, msgStream) ->
+            return Ok {
+                InitMsg = initMsg
+                MsgStream = msgStream
+            }
+    }
+
     static member internal AcceptAnyFromTransportListener (transportListener: TransportListener)
                                                               : Async<Result<PeerNode, ConnectError>> = async {
         let! acceptRes = MsgStream.AcceptFromTransportListener transportListener
