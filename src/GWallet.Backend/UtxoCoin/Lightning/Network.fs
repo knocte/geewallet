@@ -92,6 +92,12 @@ type internal TransportListener =
 
     static member internal Bind (nodeSecret: ExtKey) (endpoint: IPEndPoint) =
         let listener = new TcpListener (endpoint)
+        listener.ExclusiveAddressUse <- false
+        listener.Server.SetSocketOption(
+            SocketOptionLevel.Socket,
+            SocketOptionName.ReuseAddress,
+            true
+        )
         listener.Start()
 
         {
@@ -180,13 +186,20 @@ type internal TransportStream =
         }
         read buf 0
 
-    static member internal Connect (nodeSecret: ExtKey)
-                                   (peerNodeId: NodeId)
-                                   (peerId: PeerId)
-                                       : Async<Result<TransportStream, HandshakeError>> = async {
-        let nodeSecretKey = nodeSecret.PrivateKey
+    static member internal ConnectFromTransportListener (transportListener: TransportListener)
+                                                        (peerNodeId: NodeId)
+                                                        (peerId: PeerId)
+                                                            : Async<Result<TransportStream, HandshakeError>> = async {
+        let nodeSecretKey = transportListener.NodeSecret.PrivateKey
         let peerEndpoint = peerId.Value :?> IPEndPoint
         let client = new TcpClient (peerId.Value.AddressFamily)
+        client.Client.ExclusiveAddressUse <- false
+        client.Client.SetSocketOption(
+            SocketOptionLevel.Socket,
+            SocketOptionName.ReuseAddress,
+            true
+        )
+        client.Client.Bind(transportListener.LocalIPEndPoint)
         Infrastructure.LogDebug <| SPrintF1 "Connecting over TCP to %A..." peerEndpoint
         let! connectRes = async {
             try
@@ -227,7 +240,7 @@ type internal TransportStream =
 
                     do! stream.WriteAsync(act3, 0, act3.Length) |> Async.AwaitTask
                     return Ok {
-                        NodeSecret = nodeSecret
+                        NodeSecret = transportListener.NodeSecret
                         Peer = peerAfterAct2
                         Client = client
                     }
