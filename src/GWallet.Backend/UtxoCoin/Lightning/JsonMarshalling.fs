@@ -55,7 +55,6 @@ module JsonMarshalling =
             let ip = serializer.Deserialize<IPAddress> reader
             reader.Read() |> ignore
             let port = serializer.Deserialize<int32> reader
-            assert (reader.TokenType = JsonToken.EndArray)
             reader.Read() |> ignore
             IPEndPoint (ip, port)
 
