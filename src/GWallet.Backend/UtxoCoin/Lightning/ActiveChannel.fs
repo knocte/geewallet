@@ -285,11 +285,11 @@ and internal ActiveChannel =
     }
 
     static member internal ConnectReestablish (channelStore: ChannelStore)
-                                              (transportListener: TransportListener)
+                                              (nodeSecret: ExtKey)
                                               (channelId: ChannelIdentifier)
                                                   : Async<Result<ActiveChannel, ReconnectActiveChannelError>> = async {
         let! connectRes =
-            ConnectedChannel.ConnectFromWallet channelStore transportListener channelId
+            ConnectedChannel.ConnectFromWallet channelStore nodeSecret channelId
         match connectRes with
         | Error reconnectError -> return Error <| Reconnect reconnectError
         | Ok connectedChannel ->

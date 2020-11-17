@@ -265,16 +265,17 @@ type internal TransportStream =
                     "DNL returned unexpected events when processing act2: %A" evts
     }
 
-    static member internal ConnectFromTransportListener (transportListener: TransportListener)
-                                                        (peerNodeId: NodeId)
-                                                        (peerId: PeerId)
-                                                            : Async<Result<TransportStream, HandshakeError>> = async {
+    static member internal Connect
+        (nodeSecret: ExtKey)
+        (peerNodeId: NodeId)
+        (peerId: PeerId)
+        : Async<Result<TransportStream, HandshakeError>> = async {
         let peerEndpoint = peerId.Value :?> IPEndPoint
         let! connectRes = TransportStream.TcpConnect None peerEndpoint
         match connectRes with
         | Error err -> return Error <| TcpConnect err
         | Ok client ->
-            return! TransportStream.ConnectHandshake client transportListener.NodeSecret peerNodeId
+            return! TransportStream.ConnectHandshake client nodeSecret peerNodeId
     }
 
     static member internal AcceptFromTransportListener (transportListener: TransportListener)

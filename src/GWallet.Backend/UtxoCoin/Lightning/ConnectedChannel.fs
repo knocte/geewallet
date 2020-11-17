@@ -148,19 +148,15 @@ type internal ConnectedChannel =
     }
 
     static member internal ConnectFromWallet (channelStore: ChannelStore)
-                                             (transportListener: TransportListener)
+                                             (nodeSecret: ExtKey)
                                              (channelId: ChannelIdentifier)
                                                  : Async<Result<ConnectedChannel, ReconnectError>> = async {
         let! serializedChannel, channel =
-            let nodeSecretKey = transportListener.NodeSecret
-            ConnectedChannel.LoadChannel channelStore nodeSecretKey channelId
+            ConnectedChannel.LoadChannel channelStore nodeSecret channelId
         let! connectRes =
             let nodeId = channel.RemoteNodeId
             let peerId = PeerId (serializedChannel.CounterpartyIP :> EndPoint)
-            PeerNode.ConnectFromTransportListener
-                transportListener
-                nodeId
-                peerId
+            PeerNode.Connect nodeSecret nodeId peerId
         match connectRes with
         | Error connectError -> return Error <| Connect connectError
         | Ok peerNode ->

@@ -33,11 +33,11 @@ and internal PeerNode =
         member self.Dispose() =
             (self.MsgStream :> IDisposable).Dispose()
 
-    static member internal ConnectFromTransportListener (transportListener: TransportListener)
-                                                        (peerNodeId: NodeId)
-                                                        (peerId: PeerId)
-                                                            : Async<Result<PeerNode, ConnectError>> = async {
-        let! connectRes = MsgStream.ConnectFromTransportListener transportListener peerNodeId peerId
+    static member internal Connect (nodeSecret: ExtKey)
+                                   (peerNodeId: NodeId)
+                                   (peerId: PeerId)
+                                       : Async<Result<PeerNode, ConnectError>> = async {
+        let! connectRes = MsgStream.Connect nodeSecret peerNodeId peerId
         match connectRes with
         | Error connectError -> return Error connectError
         | Ok (initMsg, msgStream) ->

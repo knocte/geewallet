@@ -19,9 +19,11 @@ module public PubKey =
 
 // FIXME: find a better name? as it clashes with NBitcoin's Network
 module public Network =
-    let public OpenChannel (lightningNode: Node) = lightningNode.OpenChannel
-    let public AcceptChannel (lightningNode: Node) = lightningNode.AcceptChannel ()
-    let public SendMonoHopPayment (lightningNode: Node) = lightningNode.SendMonoHopPayment
-    let public ReceiveMonoHopPayment (lightningNode: Node) = lightningNode.ReceiveMonoHopPayment
-    let public LockChannelFunding (lightningNode: Node) = lightningNode.LockChannelFunding
-    let public EndPoint (lightningNode: Node) = lightningNode.EndPoint
+    let public OpenChannel (nodeClient: NodeClient) = nodeClient.OpenChannel
+    let public SendMonoHopPayment (nodeClient: NodeClient) = nodeClient.SendMonoHopPayment
+    let public ConnectLockChannelFunding (nodeClient: NodeClient) = nodeClient.ConnectLockChannelFunding
+
+    let public AcceptChannel (nodeServer: NodeServer) = nodeServer.AcceptChannel ()
+    let public ReceiveMonoHopPayment (nodeServer: NodeServer) = nodeServer.ReceiveMonoHopPayment
+    let public AcceptLockChannelFunding (nodeServer: NodeServer) = nodeServer.AcceptLockChannelFunding
+    let public EndPoint (nodeServer: NodeServer) = nodeServer.EndPoint

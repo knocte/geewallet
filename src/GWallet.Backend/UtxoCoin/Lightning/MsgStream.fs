@@ -101,13 +101,13 @@ type internal MsgStream =
                 | _ -> return Error <| UnexpectedMsg msg
     }
 
-    static member internal ConnectFromTransportListener (transportListener: TransportListener)
-                                                        (peerNodeId: NodeId)
-                                                        (peerId: PeerId)
-                                                            : Async<Result<InitMsg * MsgStream, ConnectError>> = async {
+    static member internal Connect (nodeSecret: ExtKey)
+                                   (peerNodeId: NodeId)
+                                   (peerId: PeerId)
+                                       : Async<Result<InitMsg * MsgStream, ConnectError>> = async {
         let! transportStreamRes =
-            TransportStream.ConnectFromTransportListener
-                transportListener
+            TransportStream.Connect
+                nodeSecret
                 peerNodeId
                 peerId
         match transportStreamRes with
