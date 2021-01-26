@@ -41,18 +41,16 @@ let isReleaseManual = false
 let filesToBumpMiniVersion: seq<string> =
     [
     ] :> seq<string>
-
+let gitLabCiYml = ".gitlab-ci.yml"
 let filesToBumpFullVersion: seq<string> =
     Seq.append filesToBumpMiniVersion [
         "src/GWallet.Backend/Properties/CommonAssemblyInfo.fs"
         "snap/snapcraft.yaml"
         ".github/workflows/ubuntu.yml"
+        ".gitlab-ci.yml"
     ]
-let gitLabCiYml = ".gitlab-ci.yml"
 let filesToGitAdd: seq<string> =
-    Seq.append filesToBumpFullVersion [
-        gitLabCiYml
-    ]
+    filesToBumpFullVersion
 
 let Replace file fromStr toStr =
     let replaceScript = Path.Combine(rootDir.FullName, "scripts", "replace.fsx")
