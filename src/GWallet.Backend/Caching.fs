@@ -150,7 +150,7 @@ module Caching =
             | Some(_,time) ->
                 let newBalance,newTime = newMap.[address]
                 let newAcc =
-                    if (newTime > time) then
+                    if newTime > time then
                         accumulator.Add(address, (newBalance,newTime))
                     else
                         accumulator
@@ -187,7 +187,7 @@ module Caching =
                 | Some(_,time) ->
                     let newBalance,newTime = newMap.[currency].[address]
                     let newAcc =
-                        if (newTime > time) then
+                        if newTime > time then
                             let newAccBalances = accBalancesForThisCurrency.Add(address, (newBalance,newTime))
                             accumulator.Add(currency, newAccBalances)
                         else
@@ -272,7 +272,7 @@ module Caching =
                     Map.toSeq someMap |>
                         Seq.sumBy (fun (_,(txAmount,txDate)) ->
                                         // FIXME: develop some kind of cache cleanup to remove these expired txs?
-                                        if (now < txDate + unconfTxExpirationSpan) then
+                                        if now < (txDate + unconfTxExpirationSpan) then
                                             txAmount
                                         else
                                             0m
@@ -361,7 +361,7 @@ module Caching =
                     let allTransSum =
                         GetSumOfAllTransactions sessionCachedNetworkData.OutgoingTransactions currency address
                     let compoundBalance = balance - allTransSum
-                    if (compoundBalance < 0.0m) then
+                    if compoundBalance < 0.0m then
                         ReportProblem compoundBalance
                                       None
                                       currency
@@ -449,7 +449,7 @@ module Caching =
                                             currency
                                             address
                 let compoundBalance = newBalance - allTransSum
-                if (compoundBalance < 0.0m) then
+                if compoundBalance < 0.0m then
                     ReportProblem compoundBalance
                                   previousBalance
                                   currency

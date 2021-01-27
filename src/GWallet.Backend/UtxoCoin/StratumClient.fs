@@ -131,7 +131,7 @@ type StratumClient (jsonRpcClient: JsonRpcTcpClient) =
         with
         | :? ElectrumServerReturningErrorInJsonResponseException as ex ->
             if ex.ErrorCode = int RpcErrorCode.InternalError then
-                return raise(ElectrumServerReturningInternalErrorException(ex.Message, ex.ErrorCode, jsonRequest, rawResponse))
+                return raise <| ElectrumServerReturningInternalErrorException (ex.Message, ex.ErrorCode, jsonRequest, rawResponse)
             if ex.ErrorCode = int RpcErrorCode.UnknownMethod then
                 return raise <| ServerMisconfiguredException(ex.Message, ex)
             if ex.ErrorCode = int RpcErrorCode.ServerBusy then
@@ -139,7 +139,7 @@ type StratumClient (jsonRpcClient: JsonRpcTcpClient) =
             if ex.ErrorCode = int RpcErrorCode.ExcessiveResourceUsage then
                 return raise <| ServerUnavailabilityException(ex.Message, ex)
 
-            return raise(ElectrumServerReturningErrorException(ex.Message, ex.ErrorCode, jsonRequest, rawResponse))
+            return raise <| ElectrumServerReturningErrorException (ex.Message, ex.ErrorCode, jsonRequest, rawResponse)
     }
 
     static member public Deserialize<'T> (result: string): 'T =
@@ -153,7 +153,8 @@ type StratumClient (jsonRpcClient: JsonRpcTcpClient) =
                                                resultTrimmed typedefof<'T>.FullName, ex)
 
         if (not (Object.ReferenceEquals(maybeError, null))) && (not (Object.ReferenceEquals(maybeError.Error, null))) then
-            raise(ElectrumServerReturningErrorInJsonResponseException(maybeError.Error.Message, maybeError.Error.Code))
+            raise <| ElectrumServerReturningErrorInJsonResponseException (maybeError.Error.Message,
+                                                                          maybeError.Error.Code)
 
         let failedDeserMsg = SPrintF2 "Failed deserializing JSON response '%s' to type '%s'"
                                       resultTrimmed typedefof<'T>.FullName
@@ -192,14 +193,14 @@ type StratumClient (jsonRpcClient: JsonRpcTcpClient) =
 
     static member private CreateVersion(versionStr: string): Version =
         let correctedVersion =
-            if (versionStr.EndsWith("+")) then
+            if versionStr.EndsWith "+" then
                 versionStr.Substring(0, versionStr.Length - 1)
             else
                 versionStr
         try
             Version(correctedVersion)
         with
-        | exn -> raise(Exception("Electrum Server's version disliked by .NET Version class: " + versionStr, exn))
+        | exn -> raise <| Exception ("Electrum Server's version disliked by .NET Version class: " + versionStr, exn)
 
     member self.ServerVersion (clientName: string) (protocolVersion: Version): Async<Version> = async {
         let obj = {

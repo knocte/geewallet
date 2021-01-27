@@ -84,7 +84,7 @@ let SignOffPayment() =
             UserInteraction.PressAnyKeyToContinue()
         else
             let account = accounts.First()
-            if (accounts.Count() > 1) then
+            if accounts.Count() > 1 then
                 failwith "More than one normal account matching address and currency? Please report this issue."
 
             match account with
@@ -106,11 +106,11 @@ let SignOffPayment() =
 
                 if UserInteraction.AskYesNo "Do you accept?" then
                     let trans = TrySign normalAccount unsignedTransaction
-                    Console.WriteLine("Transaction signed.")
-                    Console.Write("Introduce a file name or path to save it: ")
+                    Console.WriteLine "Transaction signed."
+                    Console.Write "Introduce a file name or path to save it: "
                     let filePathToSaveTo = Console.ReadLine()
                     Account.SaveSignedTransaction trans filePathToSaveTo
-                    Console.WriteLine("Transaction signed and saved successfully. Now copy it to the online device.")
+                    Console.WriteLine "Transaction signed and saved successfully. Now copy it to the online device."
                     UserInteraction.PressAnyKeyToContinue ()
             | _ ->
                 failwith "Account type not supported. Please report this issue."
@@ -121,8 +121,8 @@ let SendPaymentOfSpecificAmount (account: IAccount)
                                 (destination: string) =
     match account with
     | :? ReadOnlyAccount ->
-        Console.WriteLine("Cannot send payments from readonly accounts.")
-        Console.Write("Introduce a file name to save the unsigned transaction: ")
+        Console.WriteLine "Cannot send payments from readonly accounts."
+        Console.Write "Introduce a file name to save the unsigned transaction: "
         let filePath = Console.ReadLine()
         let proposal = {
             OriginAddress = account.PublicAddress;
@@ -130,7 +130,7 @@ let SendPaymentOfSpecificAmount (account: IAccount)
             DestinationAddress = destination;
         }
         Account.SaveUnsignedTransaction proposal transactionMetadata filePath
-        Console.WriteLine("Transaction saved. Now copy it to the device with the private key.")
+        Console.WriteLine "Transaction saved. Now copy it to the device with the private key."
         UserInteraction.PressAnyKeyToContinue()
     | :? NormalAccount as normalAccount ->
         TrySendAmount normalAccount transactionMetadata destination amount
@@ -143,11 +143,11 @@ let SendPayment() =
     let maybeAmount = UserInteraction.AskAmount account
     match maybeAmount with
     | None -> ()
-    | Some(amount) ->
+    | Some amount ->
         let maybeFee = UserInteraction.AskFee account amount destination
         match maybeFee with
         | None -> ()
-        | Some(fee) ->
+        | Some fee ->
             SendPaymentOfSpecificAmount account amount fee destination
 
 let rec TryArchiveAccount account =
@@ -171,7 +171,7 @@ let ArchiveAccount() =
     let account = UserInteraction.AskAccount()
     match account with
     | :? ReadOnlyAccount as readOnlyAccount ->
-        Console.WriteLine("Read-only accounts cannot be archived, but just removed entirely.")
+        Console.WriteLine "Read-only accounts cannot be archived, but just removed entirely."
         if not (UserInteraction.AskYesNo "Do you accept?") then
             ()
         else
@@ -183,11 +183,11 @@ let ArchiveAccount() =
             Account.GetShowableBalance account ServerSelectionMode.Fast None
                 |> Async.RunSynchronously
         match balance with
-        | NotFresh(NotAvailable) ->
+        | NotFresh NotAvailable ->
             Presentation.Error "Removing accounts when offline is not supported."
             ()
-        | Fresh(amount) | NotFresh(Cached(amount,_)) ->
-            if (amount > 0m) then
+        | Fresh amount | NotFresh(Cached(amount,_)) ->
+            if amount > 0m then
                 Presentation.Error "Please empty the account before removing it."
                 UserInteraction.PressAnyKeyToContinue ()
             else
@@ -298,7 +298,7 @@ let rec PerformOperation (numAccounts: int) =
             let! privateKeyBytes = Async.AwaitTask masterPrivateKeyTask
             return! Account.CreateAllAccounts privateKeyBytes password
         }
-        Console.WriteLine("Accounts created")
+        Console.WriteLine "Accounts created"
         UserInteraction.PressAnyKeyToContinue()
     | Operations.Refresh -> ()
     | Operations.SendPayment ->
@@ -320,7 +320,7 @@ let rec PerformOperation (numAccounts: int) =
 
 let rec GetAccountOfSameCurrency currency =
     let account = UserInteraction.AskAccount()
-    if (account.Currency <> currency) then
+    if account.Currency <> currency then
         Presentation.Error (sprintf "The account selected doesn't match the currency %A" currency)
         GetAccountOfSameCurrency currency
     else
@@ -344,7 +344,7 @@ let rec CheckArchivedAccountsAreEmpty(): bool =
         let maybeFee = UserInteraction.AskFee archivedAccount allBalance account.PublicAddress
         match maybeFee with
         | None -> ()
-        | Some(feeInfo) ->
+        | Some feeInfo ->
             let txId =
                 Account.SweepArchivedFunds archivedAccount balance account feeInfo
                     |> Async.RunSynchronously

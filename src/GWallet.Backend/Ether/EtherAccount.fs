@@ -23,13 +23,13 @@ module internal Account =
     let private KeyStoreService = KeyStoreService()
 
     let GetPublicAddressFromUnencryptedPrivateKey (privateKey: string) =
-        EthECKey(privateKey).GetPublicAddress()
+        (EthECKey privateKey).GetPublicAddress()
 
     let internal GetPublicAddressFromNormalAccountFile (accountFile: FileRepresentation): string =
         let encryptedPrivateKey = accountFile.Content()
         let rawPublicAddress = KeyStoreService.GetAddressFromKeyStore encryptedPrivateKey
         let publicAddress =
-            if (rawPublicAddress.StartsWith("0x")) then
+            if rawPublicAddress.StartsWith "0x" then
                 rawPublicAddress
             else
                 "0x" + rawPublicAddress
@@ -52,9 +52,9 @@ module internal Account =
                            (cancelSourceOption: Option<CustomCancelSource>)
                                = async {
         let! balance =
-            if (account.Currency.IsEther()) then
+            if account.Currency.IsEther() then
                 Server.GetEtherBalance account.Currency account.PublicAddress balType mode cancelSourceOption
-            elif (account.Currency.IsEthToken()) then
+            elif account.Currency.IsEthToken() then
                 Server.GetTokenBalance account.Currency account.PublicAddress balType mode cancelSourceOption
             else
                 failwith <| SPrintF1 "Assertion failed: currency %A should be Ether or Ether token" account.Currency
@@ -95,7 +95,7 @@ module internal Account =
 
                     match unconfirmed,confirmed with
                     | Some unconfirmedAmount,Some confirmedAmount ->
-                        if (unconfirmedAmount < confirmedAmount) then
+                        if unconfirmedAmount < confirmedAmount then
                             return unconfirmed
                         else
                             return confirmed
@@ -132,23 +132,23 @@ module internal Account =
         let ETHEREUM_ADDRESSES_LENGTH = 42
         let ETHEREUM_ADDRESS_PREFIX = "0x"
 
-        if not (address.StartsWith(ETHEREUM_ADDRESS_PREFIX)) then
-            raise (AddressMissingProperPrefix([ETHEREUM_ADDRESS_PREFIX]))
+        if not (address.StartsWith ETHEREUM_ADDRESS_PREFIX) then
+            raise <| AddressMissingProperPrefix [ ETHEREUM_ADDRESS_PREFIX ]
 
-        if (address.Length <> ETHEREUM_ADDRESSES_LENGTH) then
+        if address.Length <> ETHEREUM_ADDRESSES_LENGTH then
             raise <| AddressWithInvalidLength [ ETHEREUM_ADDRESSES_LENGTH ]
 
         do! Ether.Server.CheckIfAddressIsAValidPaymentDestination currency address
 
-        if (not (addressUtil.IsChecksumAddress(address))) then
+        if not (addressUtil.IsChecksumAddress address) then
             let validCheckSumAddress = addressUtil.ConvertToChecksumAddress(address)
-            raise (AddressWithInvalidChecksum(Some validCheckSumAddress))
+            raise <| AddressWithInvalidChecksum (Some validCheckSumAddress)
     }
 
     let private GetTransactionCount (currency: Currency) (publicAddress: string): Async<int64> = async {
         let! result = Ether.Server.GetTransactionCount currency publicAddress
         let value = result.Value
-        if (value > BigInteger(Int64.MaxValue)) then
+        if value > BigInteger Int64.MaxValue then
             failwith <| SPrintF1 "Serialization doesn't support such a big integer (%s) for the nonce, please report this issue."
                       (result.ToString())
         let int64result:Int64 = BigInteger.op_Explicit value
@@ -157,7 +157,7 @@ module internal Account =
 
     let private GetGasPrice currency: Async<int64> = async {
         let! gasPrice = Ether.Server.GetGasPrice currency
-        if (gasPrice.Value > BigInteger(Int64.MaxValue)) then
+        if gasPrice.Value > BigInteger Int64.MaxValue then
             failwith <| SPrintF1 "Serialization doesn't support such a big integer (%s) for the gas, please report this issue."
                       (gasPrice.Value.ToString())
         let gasPrice64: Int64 = BigInteger.op_Explicit gasPrice.Value
@@ -181,8 +181,8 @@ module internal Account =
                                                        0.01m
 
         let feeValue = maybeBetterFee.CalculateAbsoluteValue()
-        if (amount.ValueToSend <> amount.BalanceAtTheMomentOfSending &&
-            feeValue > (amount.BalanceAtTheMomentOfSending - amount.ValueToSend)) then
+        if (amount.ValueToSend <> amount.BalanceAtTheMomentOfSending) &&
+            feeValue > (amount.BalanceAtTheMomentOfSending - amount.ValueToSend) then
             raise <| InsufficientBalanceForFee (Some feeValue)
 
         return { Ether.Fee = maybeBetterFee; Ether.TransactionCount = txCount }
@@ -198,7 +198,7 @@ module internal Account =
             | _ -> failwith <| SPrintF1 "Unknown token %A" account.Currency
 
         let! tokenTransferFee = Ether.Server.EstimateTokenTransferFee account amount destination
-        if (tokenTransferFee.Value > BigInteger(Int64.MaxValue)) then
+        if tokenTransferFee.Value > BigInteger Int64.MaxValue then
             failwith <| SPrintF1 "Serialization doesn't support such a big integer (%s) for the gas cost of the token transfer, please report this issue."
                       (tokenTransferFee.Value.ToString())
         let gasCost64: Int64 = BigInteger.op_Explicit tokenTransferFee.Value
@@ -232,7 +232,7 @@ module internal Account =
                 KeyStoreService.DecryptKeyStoreFromJson(password, encryptedPrivateKey)
             with
             | :? DecryptionException ->
-                raise (InvalidPassword)
+                raise InvalidPassword
 
         EthECKey(privKeyInBytes, true)
 
@@ -253,12 +253,12 @@ module internal Account =
                                      (privateKey: EthECKey) =
 
         let chain = GetNetwork currency
-        if (GetNetwork txMetadata.Fee.Currency <> chain) then
+        if GetNetwork txMetadata.Fee.Currency <> chain then
             invalidArg "chain" (SPrintF2 "Assertion failed: fee currency (%A) chain doesn't match with passed chain (%A)"
                                         txMetadata.Fee.Currency chain)
 
         let amountToSendConsideringMinerFee =
-            if (amount.ValueToSend = amount.BalanceAtTheMomentOfSending) then
+            if amount.ValueToSend = amount.BalanceAtTheMomentOfSending then
                 amount.ValueToSend - (txMetadata :> IBlockchainFeeInfo).FeeValue
             else
                 amount.ValueToSend
@@ -324,7 +324,7 @@ module internal Account =
                 SignEtherTokenTransaction
                     account.Currency txMetadata account.PublicAddress destination amount privateKey
             elif account.Currency.IsEtherBased() then
-                if (txMetadata.Fee.Currency <> account.Currency) then
+                if txMetadata.Fee.Currency <> account.Currency then
                     failwith <| SPrintF2 "Assertion failed: fee currency (%A) doesn't match with passed chain (%A)"
                               txMetadata.Fee.Currency account.Currency
                 SignEtherTransaction account.Currency txMetadata destination amount privateKey
@@ -366,7 +366,7 @@ module internal Account =
                     (amount: TransferAmount)
                     (password: string) =
         let baseAccount = account :> IAccount
-        if (baseAccount.PublicAddress.Equals(destination, StringComparison.InvariantCultureIgnoreCase)) then
+        if baseAccount.PublicAddress.Equals (destination, StringComparison.InvariantCultureIgnoreCase) then
             raise DestinationEqualToOrigin
 
         let currency = baseAccount.Currency

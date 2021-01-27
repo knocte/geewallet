@@ -13,8 +13,8 @@ open GWallet.Backend.FSharpUtil.UwpHacks
 module WarpKey =
 
     let XOR (a: array<byte>) (b: array<byte>): array<byte> =
-        if (a.Length <> b.Length) then
-            raise (ArgumentException())
+        if a.Length <> b.Length then
+            raise <| ArgumentException ()
         else
             let result = Array.create<byte> a.Length (byte 0)
             for i = 0 to (a.Length - 1) do
@@ -55,7 +55,7 @@ module WarpKey =
         let scrypt = Scrypt passphrase salt
         let pbkdf2 = PBKDF2 passphrase salt
         let privKeyBytes = XOR scrypt pbkdf2
-        if (privKeyBytes.Length <> LENGTH_OF_PRIVATE_KEYS) then
+        if privKeyBytes.Length <> LENGTH_OF_PRIVATE_KEYS then
             failwith <| SPrintF2 "Something went horribly wrong because length of privKey was not %i but %i"
                       LENGTH_OF_PRIVATE_KEYS privKeyBytes.Length
         privKeyBytes

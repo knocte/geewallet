@@ -83,7 +83,7 @@ type ElectrumIntegrationTests() =
 
         match maybeFilter with
         | Some filterFunc ->
-            if (filterFunc electrumServer) then
+            if filterFunc electrumServer then
                 return innerCheck electrumServer
             else
                 return None

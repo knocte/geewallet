@@ -114,8 +114,8 @@ module Account =
                         let positiveBalance =
                             match maybeBalance with
                             | Some balance ->
-                                if (balance > 0m) then
-                                    Some(balance)
+                                if balance > 0m then
+                                    Some balance
                                 else
                                     None
                             | _ ->
@@ -332,7 +332,7 @@ module Account =
                     (password: string)
                         : Async<Uri> =
         let baseAccount = account :> IAccount
-        if (baseAccount.PublicAddress.Equals(destination, StringComparison.InvariantCultureIgnoreCase)) then
+        if baseAccount.PublicAddress.Equals (destination, StringComparison.InvariantCultureIgnoreCase) then
             raise DestinationEqualToOrigin
 
         let currency = baseAccount.Currency
@@ -621,12 +621,12 @@ module Account =
             raise <| Exception(SPrintF1 "Unknown signedTransaction subtype: %s" unexpectedType.FullName)
 
     let LoadSignedTransactionFromFile (filePath: string) =
-        let signedTransInJson = File.ReadAllText(filePath)
+        let signedTransInJson = File.ReadAllText filePath
 
         ImportSignedTransactionFromJson signedTransInJson
 
     let LoadUnsignedTransactionFromFile (filePath: string): UnsignedTransaction<IBlockchainFeeInfo> =
-        let unsignedTransInJson = File.ReadAllText(filePath)
+        let unsignedTransInJson = File.ReadAllText filePath
 
         ImportUnsignedTransactionFromJson unsignedTransInJson
 

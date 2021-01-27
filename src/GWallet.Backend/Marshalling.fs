@@ -150,10 +150,10 @@ module Marshalling =
         Type.GetType(fullTypeName)
 
     let DeserializeCustom<'T>(json: string, settings: JsonSerializerSettings): 'T =
-        if (json = null) then
-            raise (ArgumentNullException("json"))
-        if (String.IsNullOrWhiteSpace(json)) then
-            raise (ArgumentException("empty or whitespace json", "json"))
+        if null = json then
+            raise <| ArgumentNullException "json"
+        if String.IsNullOrWhiteSpace json then
+            raise <| ArgumentException ("empty or whitespace json", "json")
 
         let deserialized =
             try
@@ -161,11 +161,11 @@ module Marshalling =
             with
             | ex ->
                 let versionJsonTag = "\"Version\":\""
-                if (json.Contains(versionJsonTag)) then
+                if json.Contains versionJsonTag then
                     let jsonSinceVersion = json.Substring(json.IndexOf(versionJsonTag) + versionJsonTag.Length)
                     let endVersionIndex = jsonSinceVersion.IndexOf("\"")
                     let version = jsonSinceVersion.Substring(0, endVersionIndex)
-                    if (version <> currentVersion) then
+                    if version <> currentVersion then
                         let msg = SPrintF2 "Incompatible marshalling version found (%s vs. current %s) while trying to deserialize JSON"
                                           version currentVersion
                         raise <| VersionMismatchDuringDeserializationException(msg, ex)
@@ -200,8 +200,8 @@ module Marshalling =
             SerializeInternal value settings
         with
         | exn ->
-            raise (SerializationException(SPrintF2 "Could not serialize object of type '%s' and value '%A'"
-                                                  (typeof<'T>.FullName) value, exn))
+            raise <| SerializationException (SPrintF2 "Could not serialize object of type '%s' and value '%A'"
+                                                      typeof<'T>.FullName value, exn)
 
     let Serialize<'T>(value: 'T): string =
         match box value with

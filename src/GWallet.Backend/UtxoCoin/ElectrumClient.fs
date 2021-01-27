@@ -29,8 +29,8 @@ module ElectrumClient =
                     stratumClient.ServerVersion CLIENT_NAME_SENT_TO_STRATUM_SERVER_WHEN_HELLO PROTOCOL_VERSION_SUPPORTED
                 with
                 | :? ElectrumServerReturningErrorException as ex ->
-                    if (ex.ErrorCode = 1 && ex.Message.StartsWith "unsupported protocol version" &&
-                                            ex.Message.EndsWith (PROTOCOL_VERSION_SUPPORTED.ToString())) then
+                    if ex.ErrorCode = 1 && ex.Message.StartsWith "unsupported protocol version" &&
+                                           ex.Message.EndsWith (PROTOCOL_VERSION_SUPPORTED.ToString()) then
 
                         // FIXME: even if this ex is already handled to ignore the server, we should report to sentry as WARN
                         raise <| ServerTooNewException(SPrintF1 "Version of server rejects our client version (%s)"
@@ -38,9 +38,10 @@ module ElectrumClient =
                     else
                         reraise()
             if versionSupportedByServer < PROTOCOL_VERSION_SUPPORTED then
-                raise (ServerTooOldException (SPrintF2 "Version of server is older (%s) than the client (%s)"
+                raise
+                <| ServerTooOldException (SPrintF2 "Version of server is older (%s) than the client (%s)"
                                                       (versionSupportedByServer.ToString())
-                                                      (PROTOCOL_VERSION_SUPPORTED.ToString())))
+                                                      (PROTOCOL_VERSION_SUPPORTED.ToString()))
             return stratumClient
         }
 

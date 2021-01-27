@@ -36,9 +36,9 @@ type ElectrumServer =
     }
     member self.CheckCompatibility (): unit =
         if self.UnencryptedPort.IsNone then
-            raise(TlsNotSupportedYetInGWalletException("TLS not yet supported"))
+            raise <| TlsNotSupportedYetInGWalletException "TLS not yet supported"
         if self.Fqdn.EndsWith ".onion" then
-            raise(TorNotSupportedYetInGWalletException("Tor(onion) not yet supported"))
+            raise <| TorNotSupportedYetInGWalletException "Tor(onion) not yet supported"
 
 module ElectrumServerSeedList =
 

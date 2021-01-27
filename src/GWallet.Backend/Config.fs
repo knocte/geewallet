@@ -167,7 +167,7 @@ module Config =
     let ExtractEmbeddedResourceFileContents resourceName =
         let assembly = Assembly.GetExecutingAssembly()
         use stream = assembly.GetManifestResourceStream resourceName
-        if (stream = null) then
+        if null = stream then
             failwith <| SPrintF1 "Embedded resource %s not found" resourceName
         use reader = new StreamReader(stream)
         reader.ReadToEnd()

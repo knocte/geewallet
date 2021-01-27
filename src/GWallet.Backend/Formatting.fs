@@ -39,7 +39,7 @@ module Formatting =
             | CurrencyType.Crypto -> 5
         // https://stackoverflow.com/a/25451689/544947
         let truncated = amount - (amount % (1m / decimal (pown 10 amountOfDecimalsToShow)))
-        if (truncated > maxAmount) then
+        if truncated > maxAmount then
             failwith <| SPrintF2 "how can %s be higher than %s?" (truncated.ToString()) (maxAmount.ToString())
 
         DecimalAmountRounding currencyType truncated

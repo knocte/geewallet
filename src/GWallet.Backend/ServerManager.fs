@@ -101,7 +101,7 @@ module ServerManager =
     let private GetDummyBalanceAction (currency: Currency) servers =
 
         let retrievalFuncs =
-            if (currency.IsUtxo()) then
+            if currency.IsUtxo() then
                 let scriptHash =
                     match currency with
                     | Currency.BTC ->

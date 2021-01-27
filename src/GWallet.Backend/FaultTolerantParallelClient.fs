@@ -265,7 +265,7 @@ type FaultTolerantParallelClient<'K,'E when 'K: equality and 'K :> ICommunicatio
         (updateServer: ('K->bool)->HistoryFact->unit) =
     do
         if typeof<'E> = typeof<Exception> then
-            raise (ArgumentException("'E cannot be System.Exception, use a derived one", "'E"))
+            raise <| ArgumentException ("'E cannot be System.Exception, use a derived one", "'E")
 
     let MeasureConsistency (results: List<'R>) =
         results |> Seq.countBy id |> Seq.sortByDescending (fun (_,count: int) -> count) |> List.ofSeq
@@ -376,7 +376,7 @@ type FaultTolerantParallelClient<'K,'E when 'K: equality and 'K :> ICommunicatio
 
             match consistencySettings with
             | Some (AverageBetweenResponses (minimumNumberOfResponses,averageFunc)) ->
-                if (newResults.Length >= int minimumNumberOfResponses) then
+                if newResults.Length >= int minimumNumberOfResponses then
                     return AverageResult (averageFunc newResults)
                 else
                     return! WhenSomeInternal consistencySettings
@@ -520,8 +520,8 @@ type FaultTolerantParallelClient<'K,'E when 'K: equality and 'K :> ICommunicatio
                           (cancellationSource: Option<CustomCancelSource>)
                               : Async<'R> = async {
         if not (funcs.Any()) then
-            return raise(ArgumentException("number of funcs must be higher than zero",
-                                           "funcs"))
+            return raise <| ArgumentException ("number of funcs must be higher than zero",
+                                               "funcs")
         let howManyFuncs = uint32 funcs.Length
         let numberOfParallelJobsAllowed = int settings.NumberOfParallelJobsAllowed
 
@@ -531,13 +531,13 @@ type FaultTolerantParallelClient<'K,'E when 'K: equality and 'K :> ICommunicatio
             | SpecificNumberOfConsistentResponsesRequired numberOfConsistentResponsesRequired ->
                 if numberOfConsistentResponsesRequired < 1u then
                     return raise <| ArgumentException("must be higher than zero", "numberOfConsistentResponsesRequired")
-                if (howManyFuncs < numberOfConsistentResponsesRequired) then
-                    return raise(ArgumentException("number of funcs must be equal or higher than numberOfConsistentResponsesRequired",
-                                                   "funcs"))
+                if howManyFuncs < numberOfConsistentResponsesRequired then
+                    return raise <| ArgumentException ("number of funcs must be equal or higher than numberOfConsistentResponsesRequired",
+                                                       "funcs")
             | AverageBetweenResponses(minimumNumberOfResponses,_) ->
-                if (int minimumNumberOfResponses > numberOfParallelJobsAllowed) then
-                    return raise(ArgumentException("numberOfParallelJobsAllowed should be equal or higher than minimumNumberOfResponses for the averageFunc",
-                                                   "settings"))
+                if int minimumNumberOfResponses > numberOfParallelJobsAllowed then
+                    return raise <| ArgumentException ("numberOfParallelJobsAllowed should be equal or higher than minimumNumberOfResponses for the averageFunc",
+                                                       "settings")
             | OneServerConsistentWithCertainValueOrTwoServers _ ->
                 ()
         | _ -> ()
@@ -562,9 +562,9 @@ type FaultTolerantParallelClient<'K,'E when 'K: equality and 'K :> ICommunicatio
             let failedFuncs = executedServers.UnsuccessfulServers
                                   |> List.map (fun unsuccessfulServer -> unsuccessfulServer.Server)
             if executedServers.SuccessfulResults.Length = 0 then
-                if (retries = settings.NumberOfRetries) then
+                if retries = settings.NumberOfRetries then
                     let firstEx = executedServers.UnsuccessfulServers.First().Failure
-                    return raise (NoneAvailableException("Not available", firstEx))
+                    return raise <| NoneAvailableException ("Not available", firstEx)
                 else
                     return! QueryInternalImplementation
                                           settings
@@ -593,10 +593,10 @@ type FaultTolerantParallelClient<'K,'E when 'K: equality and 'K :> ICommunicatio
                     | [] ->
                         return failwith "resultsSoFar.Length != 0 but MeasureConsistency returns None, please report this bug"
                     | (_,maxNumberOfConsistentResultsObtained)::_ ->
-                        if (retriesForInconsistency = settings.NumberOfRetriesForInconsistency) then
-                            return raise (ResultInconsistencyException(totalNumberOfSuccesfulResultsObtained,
-                                                                       maxNumberOfConsistentResultsObtained,
-                                                                       numberOfConsistentResponsesRequired))
+                        if retriesForInconsistency = settings.NumberOfRetriesForInconsistency then
+                            return raise <| ResultInconsistencyException (totalNumberOfSuccesfulResultsObtained,
+                                                                          maxNumberOfConsistentResultsObtained,
+                                                                          numberOfConsistentResponsesRequired)
                         else
                             return! QueryInternalImplementation
                                                   settings
@@ -608,9 +608,10 @@ type FaultTolerantParallelClient<'K,'E when 'K: equality and 'K :> ICommunicatio
                                                   (retriesForInconsistency + 1u)
                                                   cancellationSource
                 | Some(AverageBetweenResponses _) ->
-                    if (retries = settings.NumberOfRetries) then
+                    if retries = settings.NumberOfRetries then
                         let firstEx = executedServers.UnsuccessfulServers.First().Failure
-                        return raise (NotEnoughAvailableException("resultsSoFar.Length != 0 but not enough to satisfy minimum number of results for averaging func", firstEx))
+                        return raise <| NotEnoughAvailableException ("resultsSoFar.Length != 0 but not enough to satisfy minimum number of results for averaging func",
+                                                                     firstEx)
                     else
                         return! QueryInternalImplementation
                                               settings
@@ -698,7 +699,7 @@ type FaultTolerantParallelClient<'K,'E when 'K: equality and 'K :> ICommunicatio
                             (cancellationTokenSourceOption: Option<CustomCancelSource>)
                                 : Async<'R> =
         if settings.NumberOfParallelJobsAllowed < 1u then
-            raise (ArgumentException("must be higher than zero", "numberOfParallelJobsAllowed"))
+            raise <| ArgumentException ("must be higher than zero", "numberOfParallelJobsAllowed")
 
         let initialServerCount = uint32 servers.Length
         let maybeSortedServers =

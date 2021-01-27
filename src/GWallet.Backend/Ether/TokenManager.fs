@@ -35,7 +35,7 @@ module TokenManager =
                                                                               origin,
                                                                               HexBigInteger(gasLimit),
                                                                               tokenValue)
-            if (transactionInput = null) then
+            if null = transactionInput then
                 failwith "Assertion failed: transaction input should not be null"
             if transactionInput.To <> GetTokenContractAddress currency then
                 failwith "Assertion failed: transactionInput's TO property should be equal to the contract address"

@@ -146,7 +146,7 @@ type FaultTolerance() =
                         .Query
                             (defaultSettingsForNoConsistencyNoParallelismAndNoRetries None) [ func1; func2 ]
                                 |> Async.RunSynchronously
-                Some(result)
+                Some result
             with
             | ex ->
                 Assert.That (ex :? ResourceUnavailabilityException, Is.True)
@@ -453,14 +453,14 @@ type FaultTolerance() =
         let mutable count1 = 0
         let aJob1 = async {
             count1 <- count1 + 1
-            if (count1 = 1) then
+            if count1 = 1 then
                 raise SomeException
             return 0
         }
         let mutable count2 = 0
         let aJob2 = async {
             count2 <- count2 + 1
-            if (count2 = 1) then
+            if count2 = 1 then
                 raise SomeException
             return 0
         }
@@ -496,7 +496,7 @@ type FaultTolerance() =
         let mutable countA = 0
         let aJob3whichGetsConsistentAtSecondTry = async {
             countA <- countA + 1
-            if (countA = 1) then
+            if countA = 1 then
                 return someOtherResultB
             else
                 return mostConsistentResult
@@ -505,7 +505,7 @@ type FaultTolerance() =
         let mutable countB = 0
         let aJob3whichGetsConsistentAtThirdTry = async {
             countB <- countB + 1
-            if (countB < 3) then
+            if countB < 3 then
                 return someOtherResultB
             else
                 return mostConsistentResult

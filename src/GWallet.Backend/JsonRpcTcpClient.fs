@@ -60,7 +60,7 @@ type JsonRpcTcpClient (host: string, port: uint32) =
             | None -> return raise <| TimeoutException (SPrintF2 "Timed out connecting to %s:%i" host port)
         with
         | :? TimeoutException ->
-            return raise(ServerCannotBeResolvedException(exceptionMsg))
+            return raise <| ServerCannotBeResolvedException exceptionMsg
         | ex ->
             match FSharpUtil.FindException<SocketException> ex with
             | None ->
@@ -86,7 +86,7 @@ type JsonRpcTcpClient (host: string, port: uint32) =
             let str =
                 match stringOption with
                 | Some s -> s
-                | None   -> raise <| ServerTimedOutException("Timeout when trying to communicate with UtxoCoin server")
+                | None   -> raise <| ServerTimedOutException "Timeout when trying to communicate with UtxoCoin server"
             return str
         with
         | :? CommunicationUnsuccessfulException as ex ->

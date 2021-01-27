@@ -38,7 +38,7 @@ module MarshallingData =
     let private ReadEmbeddedResource resourceName =
         let assembly = Assembly.GetExecutingAssembly()
         use stream = assembly.GetManifestResourceStream resourceName
-        if (stream = null) then
+        if null = stream then
             failwithf "Embedded resource %s not found" resourceName
         use reader = new StreamReader(stream)
         reader.ReadToEnd()
