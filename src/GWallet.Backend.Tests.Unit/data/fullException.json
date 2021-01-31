@@ -3,14 +3,14 @@
   "TypeName": "GWallet.Backend.MarshalledException",
   "Value": {
     "HumanReadableSummary": {
-      "ExceptionType": "GWallet.Backend.Tests.CustomException",
+      "ExceptionType": "GWallet.Backend.Tests.Unit.CustomException",
       "Message": "msg",
       "StackTrace": "  at GWallet.Backend.Tests.ExceptionMarshalling.SerializeFullException () [0x00016] in {prjDirAbsolutePath}/ExceptionMarshalling.fs:line 65",
       "InnerException": {
         "Case": "Some",
         "Fields": [
           {
-            "ExceptionType": "GWallet.Backend.Tests.CustomException",
+            "ExceptionType": "GWallet.Backend.Tests.Unit.CustomException",
             "Message": "innerMsg",
             "StackTrace": "",
             "InnerException": null

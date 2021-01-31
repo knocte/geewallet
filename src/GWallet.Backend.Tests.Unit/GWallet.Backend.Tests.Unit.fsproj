@@ -6,12 +6,12 @@
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <ProjectGuid>{F9448076-88BE-4045-8704-A652D133E036}</ProjectGuid>
     <OutputType>Library</OutputType>
-    <RootNamespace>GWallet.Backend.Tests</RootNamespace>
-    <AssemblyName>GWallet.Backend.Tests</AssemblyName>
+    <RootNamespace>GWallet.Backend.Tests.Unit</RootNamespace>
+    <AssemblyName>GWallet.Backend.Tests.Unit</AssemblyName>
     <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
     <TargetFSharpCoreVersion>4.7.0.0</TargetFSharpCoreVersion>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
-    <Name>GWallet.Backend.Tests</Name>
+    <Name>GWallet.Backend.Tests.Unit</Name>
     <TargetFrameworkProfile />
     <OtherFlags>
         /warnon:1182

@@ -241,6 +241,54 @@ let RunFrontend (buildConfig: BinaryConfig) (maybeArgs: Option<string>) =
     proc.WaitForExit()
     proc
 
+let RunTests (suite: string) =
+    Console.WriteLine (sprintf "Running %s tests..." suite)
+    Console.WriteLine ()
+
+    // so that we get file names in stack traces
+    Environment.SetEnvironmentVariable("MONO_ENV_OPTIONS", "--debug")
+
+    let testAssemblyName = sprintf "GWallet.Backend.Tests.%s" suite
+    let testAssembly = Path.Combine(rootDir.FullName, "src", testAssemblyName, "bin",
+                                    testAssemblyName + ".dll") |> FileInfo
+    if not testAssembly.Exists then
+        failwithf "File not found: %s" testAssembly.FullName
+
+    let runnerCommand =
+        match Misc.GuessPlatform() with
+        | Misc.Platform.Linux ->
+            let nunitCommand = "nunit-console"
+            MakeCheckCommand nunitCommand
+
+            { Command = nunitCommand; Arguments = testAssembly.FullName }
+        | _ ->
+            let nunitVersion = "2.7.1"
+            if not nugetExe.Exists then
+                MakeAll None |> ignore
+
+            let nugetInstallCommand =
+                {
+                    Command = nugetExe.FullName
+                    Arguments = sprintf "install NUnit.Runners -Version %s -OutputDirectory %s"
+                                        nunitVersion nugetPackagesSubDirName
+                }
+            Process.SafeExecute(nugetInstallCommand, Echo.All)
+                |> ignore
+
+            {
+                Command = Path.Combine(nugetPackagesSubDirName,
+                                       sprintf "NUnit.Runners.%s" nunitVersion,
+                                       "tools",
+                                       "nunit-console.exe")
+                Arguments = testAssembly.FullName
+            }
+
+    let nunitRun = Process.Execute(runnerCommand,
+                                   Echo.All)
+    if (nunitRun.ExitCode <> 0) then
+        Console.Error.WriteLine "Tests failed"
+        Environment.Exit 1
+
 let maybeTarget = GatherTarget (Misc.FsxArguments(), None)
 match maybeTarget with
 | None ->
@@ -297,52 +345,7 @@ match maybeTarget with
     Directory.SetCurrentDirectory previousCurrentDir
 
 | Some("check") ->
-    Console.WriteLine "Running tests..."
-    Console.WriteLine ()
-
-    // so that we get file names in stack traces
-    Environment.SetEnvironmentVariable("MONO_ENV_OPTIONS", "--debug")
-
-    let testAssemblyName = "GWallet.Backend.Tests"
-    let testAssembly = Path.Combine(rootDir.FullName, "src", testAssemblyName, "bin",
-                                    testAssemblyName + ".dll") |> FileInfo
-    if not testAssembly.Exists then
-        failwithf "File not found: %s" testAssembly.FullName
-
-    let runnerCommand =
-        match Misc.GuessPlatform() with
-        | Misc.Platform.Linux ->
-            let nunitCommand = "nunit-console"
-            MakeCheckCommand nunitCommand
-
-            { Command = nunitCommand; Arguments = testAssembly.FullName }
-        | _ ->
-            let nunitVersion = "2.7.1"
-            if not nugetExe.Exists then
-                MakeAll None |> ignore
-
-            let nugetInstallCommand =
-                {
-                    Command = nugetExe.FullName
-                    Arguments = sprintf "install NUnit.Runners -Version %s -OutputDirectory %s"
-                                        nunitVersion nugetPackagesSubDirName
-                }
-            Process.SafeExecute(nugetInstallCommand, Echo.All)
-                |> ignore
-
-            {
-                Command = Path.Combine(nugetPackagesSubDirName,
-                                       sprintf "NUnit.Runners.%s" nunitVersion,
-                                       "tools",
-                                       "nunit-console.exe")
-                Arguments = testAssembly.FullName
-            }
-
-    let nunitRun = Process.Execute(runnerCommand,
-                                   Echo.All)
-    if (nunitRun.ExitCode <> 0) then
-        Console.Error.WriteLine "Tests failed"
-        Environment.Exit 1
+    RunTests "Unit"
 
 | Some("install") ->
     let buildConfig = BinaryConfig.Release
@@ -407,7 +410,7 @@ match maybeTarget with
         let excludeFolders =
             String.Format("scripts{0}" +
                           "src{1}GWallet.Frontend.Console{0}" +
-                          "src{1}GWallet.Backend.Tests{0}" +
+                          "src{1}GWallet.Backend.Tests.Unit{0}" +
                           "src{1}GWallet.Backend.Tests.End2End{0}" +
                           "src{1}GWallet.Backend{1}FSharpUtil.fs",
                           Path.PathSeparator, Path.DirectorySeparatorChar)

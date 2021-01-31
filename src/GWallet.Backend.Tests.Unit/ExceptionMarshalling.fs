@@ -1,4 +1,4 @@
-﻿namespace GWallet.Backend.Tests
+﻿namespace GWallet.Backend.Tests.Unit
 
 open System
 open System.Runtime.Serialization
@@ -159,7 +159,7 @@ type ExceptionMarshalling () =
         let ex: MarshallingCompatibilityException =
             Assert.Throws(fun _ -> Marshalling.Serialize exToSerialize |> ignore<string>)
         Assert.That(ex, Is.TypeOf<MarshallingCompatibilityException>())
-        Assert.That(ex.Message, Is.StringContaining "GWallet.Backend.Tests.CustomExceptionWithoutSerializationCtor")
+        Assert.That(ex.Message, Is.StringContaining "GWallet.Backend.Tests.Unit.CustomExceptionWithoutSerializationCtor")
 
     [<Test>]
     member __.``can deserialize custom exceptions``() =

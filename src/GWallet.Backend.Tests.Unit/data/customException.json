@@ -3,8 +3,8 @@
   "TypeName": "GWallet.Backend.MarshalledException",
   "Value": {
     "HumanReadableSummary": {
-      "ExceptionType": "GWallet.Backend.Tests.CustomFSharpException",
-      "Message": "Exception of type 'GWallet.Backend.Tests.CustomFSharpException' was thrown.",
+      "ExceptionType": "GWallet.Backend.Tests.Unit.CustomException",
+      "Message": "msg",
       "StackTrace": "",
       "InnerException": null
     },

@@ -1,4 +1,4 @@
-﻿namespace GWallet.Backend.Tests
+﻿namespace GWallet.Backend.Tests.Unit
 
 open System.Linq
 
