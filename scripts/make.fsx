@@ -433,7 +433,8 @@ match maybeTarget with
         let DEFAULT_NUGET_PACKAGES_SUBFOLDER_NAME = "packages"
 
         let notBlacklist (dir: DirectoryInfo): bool =
-            not <| dir.FullName.Contains "End2End"
+            // in case we want to discard some items for this sanitycheck step
+            true
 
         let notSubmodule (dir: DirectoryInfo): bool =
             let getSubmoduleDirsForThisRepo (): seq<DirectoryInfo> =

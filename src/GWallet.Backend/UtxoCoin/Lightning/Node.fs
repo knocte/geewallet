@@ -60,6 +60,7 @@ type internal NodeReceiveMonoHopPaymentError =
 
 type IChannelToBeOpened =
     abstract member ConfirmationsRequired: uint32 with get
+    abstract member ChannelId: ChannelIdentifier with get
 
 type PendingChannel internal (outgoingUnfundedChannel: OutgoingUnfundedChannel) =
     member internal self.OutgoingUnfundedChannel = outgoingUnfundedChannel
@@ -82,6 +83,9 @@ type PendingChannel internal (outgoingUnfundedChannel: OutgoingUnfundedChannel) 
         member self.ConfirmationsRequired
             with get(): uint32 =
                 self.OutgoingUnfundedChannel.MinimumDepth.Value
+        member self.ChannelId
+            with get(): ChannelIdentifier =
+                self.OutgoingUnfundedChannel.ChannelId
 
 type Node internal (channelStore: ChannelStore, transportListener: TransportListener) =
     member val ChannelStore = channelStore
