@@ -3,6 +3,7 @@ stages:
   - build
   - unit_tests
   - integration_tests
+  - end2end_tests
   - package
 
 stockmono_buildenv:
@@ -47,6 +48,20 @@ stockmono_test_integration:
     - make
     - make update-servers
 
+stockmono_test_end2end:
+  image: $CI_REGISTRY_IMAGE/stock_env:$CI_COMMIT_SHA
+  stage: end2end_tests
+  script:
+    # https://askubuntu.com/a/1013396
+    - DEBIAN_FRONTEND=noninteractive apt-get install -y mono-complete mono-xbuild fsharp
+    - mono --version
+    - source ./scripts/install_regtest_dependencies.sh
+
+    - apt-get install -y nunit-console
+    - ./configure.sh
+    - make
+    - make check-end2end
+
 newmono_buildenv:
   image: docker:19.03.12
   stage: buildenv
@@ -89,6 +104,17 @@ newmono_test_integration:
     - ./configure.sh &&
       make &&
       make update-servers
+
+newmono_test_end2end:
+  image: $CI_REGISTRY_IMAGE/new_env:$CI_COMMIT_SHA
+  stage: end2end_tests
+  script:
+    - ./scripts/install_mono_from_microsoft_deb_packages.sh
+    - source ./scripts/install_regtest_dependencies.sh
+
+    - apt install -y nunit-console
+
+    - time (./configure.sh && make && make check-end2end)
 
 # snap package generation is not working with GitLabCI; TODO: report bug
 #stockoldmono_package:

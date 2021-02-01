@@ -7,6 +7,9 @@ install:
 check:
 	@./scripts/make.sh check
 
+check-end2end:
+	@./scripts/make.sh check-end2end
+
 release:
 	@./scripts/make.sh release
 

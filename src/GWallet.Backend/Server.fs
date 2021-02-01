@@ -190,11 +190,37 @@ module ServerRegistry =
                 yield currency, allServers
         } |> Map.ofSeq
 
-    let private ServersRankingBaseline =
-        Deserialize (Config.ExtractEmbeddedResourceFileContents ServersEmbeddedResourceFileName)
+    let private BitcoinRegTestServers =
+        let ipv6Localhost = "::1"
+        seq [
+            {
+                ServerInfo =
+                    {
+                        NetworkPath = ipv6Localhost
+                        ConnectionType =
+                            {
+                                Encrypted = false
+                                Protocol = Tcp 50001u
+                            }
+                    }
+                CommunicationHistory = None
+            }
+        ]
+
+    // needs to receive unit because regTest network is assigned later (mutable)
+    let private ServersRankingBaseline () =
+        let baseline =
+            Deserialize (Config.ExtractEmbeddedResourceFileContents ServersEmbeddedResourceFileName)
+        if Config.BitcoinNet() = NBitcoin.Network.RegTest then
+            // In regtest mode, replace the regular bitcoin servers with just
+            // the locally-running electrum server
+            Map.add Currency.BTC BitcoinRegTestServers baseline
+        else
+            baseline
+
 
     let MergeWithBaseline (ranking: ServerRanking): ServerRanking =
-        Merge ranking ServersRankingBaseline
+        Merge ranking <| ServersRankingBaseline ()
 
 [<CustomEquality; NoComparison>]
 type Server<'K,'R when 'K: equality and 'K :> ICommunicationHistory> =

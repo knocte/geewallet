@@ -550,29 +550,12 @@ module Caching =
             )
 
         member __.GetServers (currency: Currency): seq<ServerDetails> =
-            if Config.BitcoinNet() = NBitcoin.Network.RegTest && currency = Currency.BTC then
-                let ipv6Localhost = "::1"
-                seq [
-                    {
-                        ServerInfo =
-                            {
-                                NetworkPath = ipv6Localhost
-                                ConnectionType =
-                                    {
-                                        Encrypted = false
-                                        Protocol = Tcp 50001u
-                                    }
-                            }
-                        CommunicationHistory = None
-                    }
-                ]
-            else
-                lock cacheFiles.ServerStats (fun _ ->
-                    match sessionServerRanking.TryFind currency with
-                    | None ->
-                        failwith <| SPrintF1 "Initialization of servers' cache failed? currency %A not found" currency
-                    | Some servers -> servers
-                )
+            lock cacheFiles.ServerStats (fun _ ->
+                match sessionServerRanking.TryFind currency with
+                | None ->
+                    failwith <| SPrintF1 "Initialization of servers' cache failed? currency %A not found" currency
+                | Some servers -> servers
+            )
 
         member __.ExportServers (): Option<string> =
             lock cacheFiles.ServerStats (fun _ ->

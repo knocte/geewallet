@@ -137,7 +137,10 @@ module ElectrumClient =
             return verboseTransactionInfo.Result.Confirmations |> uint32
     }
 
-    let EstimateFee (numBlocksTarget: int) (stratumServer: Async<StratumClient>): Async<decimal> = async {
+    let private EstimateFeeInternal
+        (numBlocksTarget: int)
+        (stratumServer: Async<StratumClient>)
+        : Async<decimal> = async {
         let! stratumClient = stratumServer
         let! estimateFeeResult = stratumClient.BlockchainEstimateFee numBlocksTarget
         if estimateFeeResult.Result = -1m then
@@ -153,6 +156,15 @@ module ElectrumClient =
             "Electrum server gave us a fee rate of %M per KB = %M sat per B" amountPerKB satPerB
         return amountPerKB
     }
+
+    let EstimateFee (numBlocksTarget: int) (stratumServer: Async<StratumClient>): Async<decimal> =
+        if Config.BitcoinNet() = NBitcoin.Network.RegTest then
+            // when running in regtest mode we don't contact the electrum server to request the fee but instead return
+            // a hard-coded value. This is because electrum gets its fee rate from bitcoind but bitcoind is usually not
+            // able to estimate fee rates in regtest mode, so the electrum request would fail
+            async { return 0.0001m }
+        else
+            EstimateFeeInternal numBlocksTarget stratumServer
 
     let BroadcastTransaction (transactionInHex: string) (stratumServer: Async<StratumClient>) = async {
         let! stratumClient = stratumServer

@@ -131,7 +131,11 @@ module Server =
             | Default mode -> FaultTolerantParallelClientDefaultSettings mode None
             | Balance (mode,predicate) -> FaultTolerantParallelClientSettingsForBalanceCheck mode predicate
             | FeeEstimation averageFee ->
-                let minResponsesRequired = 3u
+                let minResponsesRequired =
+                    if currency = Currency.BTC && Config.BitcoinNet() = NBitcoin.Network.RegTest then
+                        1u
+                    else
+                        3u
                 FaultTolerantParallelClientDefaultSettings
                     ServerSelectionMode.Fast
                     (Some (AverageBetweenResponses (minResponsesRequired, averageFee)))
