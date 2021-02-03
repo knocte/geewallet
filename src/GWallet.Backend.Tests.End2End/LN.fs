@@ -382,31 +382,58 @@ type Lnd = {
         | err -> return Error err
     }
 
+type WalletInstance private (password: string, channelStore: ChannelStore, node: Node) =
+    static member New(): Async<WalletInstance> = async {
+        let password = Path.GetRandomFileName()
+        do!
+            let privateKeyByteLength = 32
+            let privateKeyBytes: array<byte> = Array.zeroCreate privateKeyByteLength
+            System.Random().NextBytes privateKeyBytes
+            Account.CreateAllAccounts privateKeyBytes password
+        let btcAccount =
+            let account = Account.GetAllActiveAccounts() |> Seq.filter (fun x -> x.Currency = Currency.BTC) |> Seq.head
+            account :?> NormalUtxoAccount
+        let channelStore = ChannelStore btcAccount
+        let node =
+            let geewalletLightningBindAddress = IPEndPoint (IPAddress.Parse "127.0.0.1", 9735)
+            Connection.Start channelStore password geewalletLightningBindAddress
+        return new WalletInstance(password, channelStore, node)
+    }
+
+    interface IDisposable with
+        member __.Dispose() =
+            Account.WipeAll()
+
+    member __.Account: IAccount =
+        Account.GetAllActiveAccounts() |> Seq.filter (fun x -> x.Currency = Currency.BTC) |> Seq.head
+
+    member self.Address: BitcoinScriptAddress =
+        BitcoinScriptAddress(self.Account.PublicAddress, Network.RegTest)
+
+    member __.Password: string = password
+    member __.ChannelStore: ChannelStore = channelStore
+    member __.Node: Node = node
+
+    member self.WaitForBalance (minAmount: Money): Async<Money> = async {
+        let btcAccount = self.Account :?> NormalUtxoAccount
+        let! cachedBalance = Account.GetShowableBalance btcAccount ServerSelectionMode.Analysis None
+        match cachedBalance with
+        | Fresh amount when amount < minAmount.ToDecimal MoneyUnit.BTC ->
+            do! Async.Sleep 500
+            return! self.WaitForBalance minAmount
+        | NotFresh _ ->
+            do! Async.Sleep 500
+            return! self.WaitForBalance minAmount
+        | Fresh amount -> return Money(amount, MoneyUnit.BTC)
+    }
+
 [<TestFixture>]
 type LN() =
     do Config.SetRunModeToTesting()
 
     [<Test>]
     member __.``can open channel with LND``() = Async.RunSynchronously <| async {
-        let geewalletPassword = Path.GetRandomFileName()
-
-        do!
-            let privateKeyByteLength = 32
-            let privateKeyBytes: array<byte> = Array.zeroCreate privateKeyByteLength
-            System.Random().NextBytes privateKeyBytes
-            Account.CreateAllAccounts privateKeyBytes geewalletPassword
-
-        let rec waitForBalance(btcAccount: NormalUtxoAccount) (minAmount: Money): Async<Money> = async {
-            let! cachedBalance = Account.GetShowableBalance btcAccount ServerSelectionMode.Analysis None
-            match cachedBalance with
-            | Fresh amount when amount < minAmount.ToDecimal MoneyUnit.BTC ->
-                do! Async.Sleep 500
-                return! waitForBalance btcAccount minAmount
-            | NotFresh _ ->
-                do! Async.Sleep 500
-                return! waitForBalance btcAccount minAmount
-            | Fresh amount -> return Money(amount, MoneyUnit.BTC)
-        }
+        use! walletInstance = WalletInstance.New()
 
         use bitcoind = Bitcoind.Start()
         use _electrumServer = ElectrumServer.Start bitcoind
@@ -416,10 +443,6 @@ type LN() =
         let blocksMinedToLnd = BlockHeightOffset32 1u
         bitcoind.GenerateBlocks blocksMinedToLnd address
 
-        let account: IAccount = Account.GetAllActiveAccounts() |> Seq.filter (fun x -> x.Currency = Currency.BTC) |> Seq.head
-        let geewalletAddress = BitcoinScriptAddress(account.PublicAddress, Network.RegTest)
-        let btcAccount = account :?> NormalUtxoAccount
-
         // Geewallet cannot use these outputs, even though they are encumbered with an output
         // script from its wallet. This is because they come from coinbase. Coinbase outputs are
         // the source of all bitcoin, and as of May 2020, Geewallet does not detect coins
@@ -427,7 +450,7 @@ type LN() =
         // do not use Geewallet. If the coins were to be detected by geewallet,
         // this test would still work. This comment is just here to avoid confusion.
         let maturityDurationInNumberOfBlocks = BlockHeightOffset32 (uint32 NBitcoin.Consensus.RegTest.CoinbaseMaturity)
-        bitcoind.GenerateBlocks maturityDurationInNumberOfBlocks geewalletAddress
+        bitcoind.GenerateBlocks maturityDurationInNumberOfBlocks walletInstance.Address
 
         // We confirm the one block mined to LND, by waiting for LND to see the chain
         // at a height which has that block matured. The height at which the block will
@@ -442,7 +465,7 @@ type LN() =
         // fund geewallet
         let geewalletAccountAmount = Money (25m, MoneyUnit.BTC)
         let feeRate = FeeRatePerKw 2500u
-        let! _txid = lnd.SendCoins geewalletAccountAmount geewalletAddress feeRate
+        let! _txid = lnd.SendCoins geewalletAccountAmount walletInstance.Address feeRate
 
         // wait for lnd's transaction to appear in mempool
         while bitcoind.GetTxIdsInMempool().Length = 0 do
@@ -459,36 +482,31 @@ type LN() =
         // At that point, the 0.25 regtest coins from the above call to sendcoins
         // are considered arrived to Geewallet.
         let consideredConfirmedAmountOfBlocksPlusOne = BlockHeightOffset32 7u
-        bitcoind.GenerateBlocks consideredConfirmedAmountOfBlocksPlusOne geewalletAddress
-
-        let channelStore = ChannelStore btcAccount
-        let node =
-            let geewalletLightningBindAddress = IPEndPoint (IPAddress.Parse "127.0.0.1", 9735)
-            Connection.Start channelStore geewalletPassword geewalletLightningBindAddress
+        bitcoind.GenerateBlocks consideredConfirmedAmountOfBlocksPlusOne walletInstance.Address
 
         let! lndEndPoint = lnd.GetEndPoint()
         let! transferAmount = async {
             let amount = Money(0.0002m, MoneyUnit.BTC)
-            let! accountBalance = waitForBalance btcAccount amount
+            let! accountBalance = walletInstance.WaitForBalance amount
             return TransferAmount (amount.ToDecimal MoneyUnit.BTC, accountBalance.ToDecimal MoneyUnit.BTC, Currency.BTC)
         }
-        let! metadata = ChannelManager.EstimateChannelOpeningFee btcAccount transferAmount
+        let! metadata = ChannelManager.EstimateChannelOpeningFee (walletInstance.Account :?> NormalUtxoAccount) transferAmount
         let! pendingChannelRes =
             Lightning.Network.OpenChannel
-                node
+                walletInstance.Node
                 lndEndPoint
                 transferAmount
                 metadata
-                geewalletPassword
+                walletInstance.Password
         let pendingChannel = UnwrapResult pendingChannelRes "OpenChannel failed"
         let minimumDepth = (pendingChannel :> IChannelToBeOpened).ConfirmationsRequired
         let channelId = (pendingChannel :> IChannelToBeOpened).ChannelId
         let! fundingTxIdRes = pendingChannel.Accept()
         let _fundingTxId = UnwrapResult fundingTxIdRes "pendingChannel.Accept failed"
-        bitcoind.GenerateBlocks (BlockHeightOffset32 minimumDepth) geewalletAddress
+        bitcoind.GenerateBlocks (BlockHeightOffset32 minimumDepth) walletInstance.Address
 
         do!
-            let channelInfo = channelStore.ChannelInfo channelId
+            let channelInfo = walletInstance.ChannelStore.ChannelInfo channelId
             let fundingBroadcastButNotLockedData =
                 match channelInfo.Status with
                 | ChannelStatus.FundingBroadcastButNotLocked fundingBroadcastButNotLockedData
@@ -509,10 +527,10 @@ type LN() =
             }
             waitForFundingConfirmed()
 
-        let! lockFundingRes = Lightning.Network.LockChannelFunding node channelId
+        let! lockFundingRes = Lightning.Network.LockChannelFunding walletInstance.Node channelId
         UnwrapResult lockFundingRes "LockChannelFunding failed"
 
-        let channelInfo = channelStore.ChannelInfo channelId
+        let channelInfo = walletInstance.ChannelStore.ChannelInfo channelId
         match channelInfo.Status with
         | ChannelStatus.Active -> ()
         | status -> failwith (SPrintF1 "unexpected channel status. Expected Active, got %A" status)
