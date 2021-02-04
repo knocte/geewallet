@@ -393,22 +393,60 @@ type Lnd = {
 
 type WalletInstance private (password: string, channelStore: ChannelStore, node: Node) =
     static let oneWalletAtATime: Semaphore = new Semaphore(1, 1)
+    static member private LocalhostIP = IPAddress.Parse "127.0.0.1"
+    static member private FunderLightningPort = 0
+    static member private FundeeLightningPort = 9735
+    static member private FunderPrivateKey = [| for i in 1 .. 32 -> byte i |]
+    static member private FundeePrivateKey = [| for i in 33 .. 64 -> byte i |]
+
+    // NOTE: the func below is duplicated from GWallet.Backend.UtxoCoin.Lightning.Node class cause it's internal and
+    // cannot be made public (otherwise we expose NBitcoin types in the API, which makes GWallet.Backend consumers need
+    // to include this transitive dependency as normal dependency too. See https://github.com/MetacoSA/NBitcoin/pull/969
+    static member internal AccountPrivateKeyToNodeSecret (accountKey: Key) =
+        let privateKeyBytesLength = 32
+        let bytes: array<byte> = Array.zeroCreate privateKeyBytesLength
+        use bytesStream = new MemoryStream (bytes)
+        let stream = NBitcoin.BitcoinStream (bytesStream, true)
+        accountKey.ReadWrite stream
+        NBitcoin.ExtKey bytes
+
+    static member private FundeePubKey =
+        let privateKey = (new Key(WalletInstance.FundeePrivateKey))
+        let extKey = WalletInstance.AccountPrivateKeyToNodeSecret privateKey
+        extKey.PrivateKey.PubKey.ToHex()
+
+    static member private FunderLightningIPEndpoint =
+        IPEndPoint (WalletInstance.LocalhostIP, WalletInstance.FunderLightningPort)
+    static member private FundeeLightningIPEndpoint =
+        IPEndPoint (WalletInstance.LocalhostIP, WalletInstance.FundeeLightningPort)
+
+    static member FundeeNodeEndpoint =
+        NodeEndPoint.Parse Currency.BTC (
+            SPrintF3 "%s@%s:%d"
+                WalletInstance.FundeePubKey
+                (WalletInstance.FundeeLightningIPEndpoint.Address.ToString())
+                WalletInstance.FundeeLightningIPEndpoint.Port
+        )
 
     static member New(): Async<WalletInstance> = async {
+        return! WalletInstance.Instantiate WalletInstance.FunderLightningIPEndpoint WalletInstance.FunderPrivateKey
+    }
+
+    static member NewFundee(): Async<WalletInstance> = async {
+        return! WalletInstance.Instantiate WalletInstance.FundeeLightningIPEndpoint WalletInstance.FundeePrivateKey
+    }
+
+    static member private Instantiate ipEndpoint privateKeyBytes : Async<WalletInstance> = async {
         oneWalletAtATime.WaitOne() |> ignore
 
         let password = Path.GetRandomFileName()
-        do!
-            let privateKeyByteLength = 32
-            let privateKeyBytes: array<byte> = Array.zeroCreate privateKeyByteLength
-            System.Random().NextBytes privateKeyBytes
-            Account.CreateAllAccounts privateKeyBytes password
+        do! Account.CreateAllAccounts privateKeyBytes password
         let btcAccount =
             let account = Account.GetAllActiveAccounts() |> Seq.filter (fun x -> x.Currency = Currency.BTC) |> Seq.head
             account :?> NormalUtxoAccount
         let channelStore = ChannelStore btcAccount
         let node =
-            let geewalletLightningBindAddress = IPEndPoint (IPAddress.Parse "127.0.0.1", 9735)
+            let geewalletLightningBindAddress = ipEndpoint
             Connection.Start channelStore password geewalletLightningBindAddress
         return new WalletInstance(password, channelStore, node)
     }
@@ -470,6 +508,133 @@ type WalletInstance private (password: string, channelStore: ChannelStore, node:
 [<TestFixture>]
 type LN() =
     do Config.SetRunModeToTesting()
+
+    [<Category "GeewalletToGeewalletFunder">]
+    [<Ignore "does not work yet">]
+    [<Test>]
+    member __.``can open channel with geewallet (funder)``() = Async.RunSynchronously <| async {
+        use! walletInstance = WalletInstance.New()
+        use bitcoind = Bitcoind.Start()
+        use _electrumServer = ElectrumServer.Start bitcoind
+        use! lnd = Lnd.Start bitcoind
+
+        // As explained in the other test, geewallet cannot use coinbase outputs.
+        // To work around that we mine a block to a LND instance and afterwards tell
+        // it to send funds to the funder geewallet instance
+        let! address = lnd.GetDepositAddress()
+        let blocksMinedToLnd = BlockHeightOffset32 1u
+        bitcoind.GenerateBlocks blocksMinedToLnd address
+
+        let maturityDurationInNumberOfBlocks = BlockHeightOffset32 (uint32 NBitcoin.Consensus.RegTest.CoinbaseMaturity)
+        bitcoind.GenerateBlocks maturityDurationInNumberOfBlocks walletInstance.Address
+
+        // We confirm the one block mined to LND, by waiting for LND to see the chain
+        // at a height which has that block matured. The height at which the block will
+        // be matured is 100 on regtest. Since we initialally mined one block for LND,
+        // this will wait until the block height of LND reaches 1 (initial blocks mined)
+        // plus 100 blocks (coinbase maturity). This test has been parameterized
+        // to use the constants defined in NBitcoin, but you have to keep in mind that
+        // the coinbase maturity may be defined differently in other coins.
+        do! lnd.WaitForBlockHeight (BlockHeight.Zero + blocksMinedToLnd + maturityDurationInNumberOfBlocks)
+        do! lnd.WaitForBalance (Money(50UL, MoneyUnit.BTC))
+
+        // fund geewallet
+        let geewalletAccountAmount = Money (25m, MoneyUnit.BTC)
+        let feeRate = FeeRatePerKw 2500u
+        let! _txid = lnd.SendCoins geewalletAccountAmount walletInstance.Address feeRate
+
+        // wait for lnd's transaction to appear in mempool
+        while bitcoind.GetTxIdsInMempool().Length = 0 do
+            Thread.Sleep 500
+
+        // We want to make sure Geewallet consideres the money received.
+        // A typical number of blocks that is almost universally considered
+        // 100% confirmed, is 6. Therefore we mine 7 blocks. Because we have
+        // waited for the transaction to appear in bitcoind's mempool, we
+        // can assume that the first of the 7 blocks will include the
+        // transaction sending money to Geewallet. The next 6 blocks will
+        // bury the first block, so that the block containing the transaction
+        // will be 6 deep at the end of the following call to generateBlocks.
+        // At that point, the 0.25 regtest coins from the above call to sendcoins
+        // are considered arrived to Geewallet.
+        let consideredConfirmedAmountOfBlocksPlusOne = BlockHeightOffset32 7u
+        bitcoind.GenerateBlocks consideredConfirmedAmountOfBlocksPlusOne walletInstance.Address
+
+        let! transferAmount = async {
+            let amount = Money(0.1m, MoneyUnit.BTC)
+            let! accountBalance = walletInstance.WaitForBalance amount
+            return TransferAmount (amount.ToDecimal MoneyUnit.BTC, accountBalance.ToDecimal MoneyUnit.BTC, Currency.BTC)
+        }
+        let! metadata = ChannelManager.EstimateChannelOpeningFee (walletInstance.Account :?> NormalUtxoAccount) transferAmount
+        let! pendingChannelRes =
+            Lightning.Network.OpenChannel
+                walletInstance.Node
+                WalletInstance.FundeeNodeEndpoint
+                transferAmount
+                metadata
+                walletInstance.Password
+        let pendingChannel = UnwrapResult pendingChannelRes "OpenChannel failed"
+        let minimumDepth = (pendingChannel :> IChannelToBeOpened).ConfirmationsRequired
+        let channelId = (pendingChannel :> IChannelToBeOpened).ChannelId
+        let! fundingTxIdRes = pendingChannel.Accept()
+        let _fundingTxId = UnwrapResult fundingTxIdRes "pendingChannel.Accept failed"
+        bitcoind.GenerateBlocks (BlockHeightOffset32 minimumDepth) walletInstance.Address
+
+        do!
+            let channelInfo = walletInstance.ChannelStore.ChannelInfo channelId
+            let fundingBroadcastButNotLockedData =
+                match channelInfo.Status with
+                | ChannelStatus.FundingBroadcastButNotLocked fundingBroadcastButNotLockedData
+                    -> fundingBroadcastButNotLockedData
+                | status -> failwith (SPrintF1 "Unexpected channel status. Expected FundingBroadcastButNotLocked, got %A" status)
+            let rec waitForFundingConfirmed() = async {
+                let! remainingConfirmations = fundingBroadcastButNotLockedData.GetRemainingConfirmations()
+                if remainingConfirmations > 0u then
+                    do! Async.Sleep 1000
+                    return! waitForFundingConfirmed()
+                else
+                    // TODO: the backend API doesn't give us any way to avoid
+                    // the FundingOnChainLocationUnknown error, so just sleep
+                    // to avoid the race condition. This waiting should really
+                    // be implemented on the backend anyway.
+                    do! Async.Sleep 10000
+                    return ()
+            }
+            waitForFundingConfirmed()
+
+        let! lockFundingRes = Lightning.Network.LockChannelFunding walletInstance.Node channelId
+        UnwrapResult lockFundingRes "LockChannelFunding failed"
+
+        let channelInfo = walletInstance.ChannelStore.ChannelInfo channelId
+        match channelInfo.Status with
+        | ChannelStatus.Active -> ()
+        | status -> failwith (SPrintF1 "unexpected channel status. Expected Active, got %A" status)
+
+        return ()
+    }
+
+
+    [<Category "GeewalletToGeewalletFundee">]
+    [<Ignore "does not work yet">]
+    [<Test>]
+    member __.``can open channel with geewallet (fundee)``() = Async.RunSynchronously <| async {
+        use! walletInstance = WalletInstance.NewFundee()
+        let! pendingChannelRes =
+            Lightning.Network.AcceptChannel
+                walletInstance.Node
+
+        let (channelId, _) = UnwrapResult pendingChannelRes "OpenChannel failed"
+
+        let! lockFundingRes = Lightning.Network.LockChannelFunding walletInstance.Node channelId
+        UnwrapResult lockFundingRes "LockChannelFunding failed"
+
+        let channelInfo = walletInstance.ChannelStore.ChannelInfo channelId
+        match channelInfo.Status with
+        | ChannelStatus.Active -> ()
+        | status -> failwith (SPrintF1 "unexpected channel status. Expected Active, got %A" status)
+
+        return ()
+    }
 
     [<Test>]
     member __.``can open channel with LND``() = Async.RunSynchronously <| async {
@@ -599,7 +764,7 @@ type LN() =
         }
 
         let! acceptChannelRes, openChannelRes = AsyncExtensions.MixedParallel2 acceptChannelTask openChannelTask
-        let channelId = UnwrapResult acceptChannelRes "AcceptChannel failed"
+        let (channelId, _) = UnwrapResult acceptChannelRes "AcceptChannel failed"
         UnwrapResult openChannelRes "lnd.OpenChannel failed"
 
         // Wait for the funding transaction to appear in mempool

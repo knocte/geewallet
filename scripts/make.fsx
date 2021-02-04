@@ -24,6 +24,8 @@ open Process
 let UNIX_NAME = "gwallet"
 let DEFAULT_FRONTEND = "GWallet.Frontend.Console"
 let BACKEND = "GWallet.Backend"
+let TEST_TYPE_UNIT = "Unit"
+let TEST_TYPE_END2END = "End2End"
 
 type BinaryConfig =
     | Debug
@@ -242,52 +244,123 @@ let RunFrontend (buildConfig: BinaryConfig) (maybeArgs: Option<string>) =
     proc
 
 let RunTests (suite: string) =
+    let findTestAssembly theSuite =
+        let testAssemblyName = sprintf "GWallet.Backend.Tests.%s" theSuite
+        let testAssembly = Path.Combine(rootDir.FullName, "src", testAssemblyName, "bin",
+                                        testAssemblyName + ".dll") |> FileInfo
+        if not testAssembly.Exists then
+            failwithf "File not found: %s" testAssembly.FullName
+        testAssembly
+
+    // string*string means flag*value, e.g. "include" * "GeewalletToGeewalletFunder"
+    let nunitCommandFor (testAssembly: FileInfo) (maybeArgs: Option<List<string*string>>): ProcessDetails =
+        let convertArgsToString (charPrefixForFlag: char) =
+            match maybeArgs with
+            | None -> String.Empty
+            | Some args ->
+                sprintf "%s "
+                    (String.Join (" ",
+                                  args.Select(fun (flag,value) ->
+                                    sprintf "%s%s %s" (charPrefixForFlag.ToString()) flag value
+                                  )
+                                 )
+                    )
+
+        match Misc.GuessPlatform() with
+        | Misc.Platform.Linux ->
+            let nunitCommand = "nunit-console"
+            MakeCheckCommand nunitCommand
+
+            let maybeExtraArgs = convertArgsToString '-'
+
+            {
+                Command = nunitCommand
+                Arguments = sprintf "%s%s" maybeExtraArgs testAssembly.FullName
+            }
+
+        | _ ->
+            let nunitVersion = "2.7.1"
+            if not nugetExe.Exists then
+                MakeAll None |> ignore
+
+            let runnerExe =
+                Path.Combine (
+                    nugetPackagesSubDirName,
+                    sprintf "NUnit.Runners.%s" nunitVersion,
+                    "tools",
+                    "nunit-console.exe"
+                ) |> FileInfo
+
+            if not runnerExe.Exists then
+                let nugetInstallCommand =
+                    {
+                        Command = nugetExe.FullName
+                        Arguments = sprintf "install NUnit.Runners -Version %s -OutputDirectory %s"
+                                            nunitVersion nugetPackagesSubDirName
+                    }
+                Process.SafeExecute(nugetInstallCommand, Echo.All)
+                    |> ignore
+
+            let maybeExtraArgs = convertArgsToString '/'
+
+            {
+                Command = runnerExe.FullName
+                Arguments = sprintf "%s%s" maybeExtraArgs testAssembly.FullName
+            }
+
+    let ourWalletToOurWalletEnd2EndTest() =
+        let testAssembly = findTestAssembly TEST_TYPE_END2END
+
+        let funderRunnerCommand =
+            nunitCommandFor testAssembly (Some [ ("include", "GeewalletToGeewalletFunder") ])
+
+        let fundeeRunnerCommand =
+            nunitCommandFor testAssembly (Some [ ("include", "GeewalletToGeewalletFundee") ])
+
+        let funderRun = async {
+            let res = Process.Execute(funderRunnerCommand, Echo.All)
+            if res.ExitCode <> 0 then
+                Console.Error.WriteLine "Funder test failed"
+                Environment.Exit 1
+        }
+
+        let fundeeRun = async {
+            let res = Process.Execute(fundeeRunnerCommand, Echo.All)
+            if res.ExitCode <> 0 then
+                Console.Error.WriteLine "Fundee test failed"
+                Environment.Exit 1
+        }
+
+        [funderRun; fundeeRun]
+        |> Async.Parallel
+        |> Async.RunSynchronously
+        |> ignore
+
     Console.WriteLine (sprintf "Running %s tests..." suite)
     Console.WriteLine ()
 
     // so that we get file names in stack traces
     Environment.SetEnvironmentVariable("MONO_ENV_OPTIONS", "--debug")
 
-    let testAssemblyName = sprintf "GWallet.Backend.Tests.%s" suite
-    let testAssembly = Path.Combine(rootDir.FullName, "src", testAssemblyName, "bin",
-                                    testAssemblyName + ".dll") |> FileInfo
-    if not testAssembly.Exists then
-        failwithf "File not found: %s" testAssembly.FullName
+    let testAssembly = findTestAssembly suite
 
     let runnerCommand =
-        match Misc.GuessPlatform() with
-        | Misc.Platform.Linux ->
-            let nunitCommand = "nunit-console"
-            MakeCheckCommand nunitCommand
-
-            { Command = nunitCommand; Arguments = testAssembly.FullName }
-        | _ ->
-            let nunitVersion = "2.7.1"
-            if not nugetExe.Exists then
-                MakeAll None |> ignore
-
-            let nugetInstallCommand =
-                {
-                    Command = nugetExe.FullName
-                    Arguments = sprintf "install NUnit.Runners -Version %s -OutputDirectory %s"
-                                        nunitVersion nugetPackagesSubDirName
-                }
-            Process.SafeExecute(nugetInstallCommand, Echo.All)
-                |> ignore
-
-            {
-                Command = Path.Combine(nugetPackagesSubDirName,
-                                       sprintf "NUnit.Runners.%s" nunitVersion,
-                                       "tools",
-                                       "nunit-console.exe")
-                Arguments = testAssembly.FullName
-            }
+        let maybeExcludeArgument =
+            if suite = TEST_TYPE_END2END then
+                Some [ ("exclude", "GeewalletToGeewalletFunder,GeewalletToGeewalletFundee") ]
+            else
+                None
+        nunitCommandFor testAssembly maybeExcludeArgument
 
     let nunitRun = Process.Execute(runnerCommand,
                                    Echo.All)
     if (nunitRun.ExitCode <> 0) then
         Console.Error.WriteLine "Tests failed"
         Environment.Exit 1
+
+    if suite = TEST_TYPE_END2END then
+        Console.WriteLine "First end2end tests finished running, now about to launch geewallet2geewallet ones..."
+        ourWalletToOurWalletEnd2EndTest()
 
 let maybeTarget = GatherTarget (Misc.FsxArguments(), None)
 match maybeTarget with
@@ -345,7 +418,7 @@ match maybeTarget with
     Directory.SetCurrentDirectory previousCurrentDir
 
 | Some("check") ->
-    RunTests "Unit"
+    RunTests TEST_TYPE_UNIT
 
 | Some "check-end2end" ->
     RunTests "End2End"

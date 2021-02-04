@@ -83,14 +83,13 @@ let AcceptChannel(): Async<unit> = async {
     use lightningNode = Lightning.Connection.Start channelStore password bindAddress
     let nodeEndPoint = Lightning.Network.EndPoint lightningNode
     Console.WriteLine(sprintf "This node, connect to it: %s" (nodeEndPoint.ToString()))
-    let! channelIdRes = Lightning.Network.AcceptChannel lightningNode
-    match channelIdRes with
+    let! acceptChannelRes = Lightning.Network.AcceptChannel lightningNode
+    match acceptChannelRes with
     | Error nodeAcceptChannelError ->
         Console.WriteLine
             (sprintf "Error accepting channel: %s" nodeAcceptChannelError.Message)
-    | Ok channelId ->
-        let channelInfo = channelStore.ChannelInfo channelId
-        Console.WriteLine (sprintf "Channel opened. Transaction ID: %s" (TxId.ToString channelInfo.FundingTxId))
+    | Ok (_, txId) ->
+        Console.WriteLine (sprintf "Channel opened. Transaction ID: %s" (TxId.ToString txId))
         Console.WriteLine "Waiting for funding locked."
     UserInteraction.PressAnyKeyToContinue()
 }

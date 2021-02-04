@@ -99,6 +99,14 @@ type Node internal (channelStore: ChannelStore, transportListener: TransportList
         member self.Dispose() =
             (self.TransportListener :> IDisposable).Dispose()
 
+    static member internal AccountPrivateKeyToNodeSecret (accountKey: Key) =
+        let privateKeyBytesLength = 32
+        let bytes: array<byte> = Array.zeroCreate privateKeyBytesLength
+        use bytesStream = new MemoryStream (bytes)
+        let stream = NBitcoin.BitcoinStream (bytesStream, true)
+        accountKey.ReadWrite stream
+        NBitcoin.ExtKey bytes
+
     member internal self.OpenChannel (nodeEndPoint: NodeEndPoint)
                                      (channelCapacity: TransferAmount)
                                      (metadata: TransactionMetadata)
@@ -144,7 +152,7 @@ type Node internal (channelStore: ChannelStore, transportListener: TransportList
                 return Ok <| PendingChannel(outgoingUnfundedChannel)
     }
 
-    member internal self.AcceptChannel (): Async<Result<ChannelIdentifier, IErrorMsg>> = async {
+    member internal self.AcceptChannel (): Async<Result<(ChannelIdentifier * TransactionIdentifier), IErrorMsg>> = async {
         let! acceptPeerRes =
             PeerNode.AcceptAnyFromTransportListener self.TransportListener
         match acceptPeerRes with
@@ -172,8 +180,9 @@ type Node internal (channelStore: ChannelStore, transportListener: TransportList
                 return Error <| (NodeAcceptChannelError.AcceptChannel acceptChannelError :> IErrorMsg)
             | Ok fundedChannel ->
                 let channelId = fundedChannel.ChannelId
+                let txId = fundedChannel.FundingTxId
                 (fundedChannel :> IDisposable).Dispose()
-                return Ok channelId
+                return Ok (channelId, txId)
     }
 
     member internal self.SendMonoHopPayment (channelId: ChannelIdentifier)
@@ -282,14 +291,8 @@ module public Connection =
                      (password: string)
                      (bindAddress: IPEndPoint)
                          : Node =
-        let secretKey: ExtKey =
-            let privateKey = Account.GetPrivateKey channelStore.Account password
-            //let bytes: array<byte> = Array.zeroCreate Key.BytesLength
-            let bytes: array<byte> = Array.zeroCreate 32
-            use bytesStream = new MemoryStream(bytes)
-            let stream = NBitcoin.BitcoinStream(bytesStream, true)
-            privateKey.ReadWrite stream
-            NBitcoin.ExtKey bytes
+        let privateKey = Account.GetPrivateKey channelStore.Account password
+        let secretKey: ExtKey = Node.AccountPrivateKeyToNodeSecret privateKey
         let transportListener = TransportListener.Bind secretKey bindAddress
         new Node (channelStore, transportListener)
 
