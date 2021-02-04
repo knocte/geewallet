@@ -224,6 +224,46 @@ type internal TransportStream =
             return Error socketExceptions
     }
 
+    static member private ConnectHandshake (client: TcpClient)
+                                           (nodeSecret: ExtKey)
+                                           (peerNodeId: NodeId)
+                                               : Async<Result<TransportStream, HandshakeError>> = async {
+        let nodeSecretKey = nodeSecret.PrivateKey
+        let stream = client.GetStream()
+        let peerId = PeerId client.Client.RemoteEndPoint
+        let peer = Peer.CreateOutbound(peerId, peerNodeId, nodeSecretKey)
+        let act1, peerEncryptor = PeerChannelEncryptor.getActOne peer.ChannelEncryptor
+        Debug.Assert((TransportStream.bolt08ActOneLength = act1.Length), "act1 has wrong length")
+        let peerAfterAct1 = { peer with ChannelEncryptor = peerEncryptor }
+
+        // Send act1
+        do! stream.WriteAsync(act1, 0, act1.Length) |> Async.AwaitTask
+
+        // Receive act2
+        Infrastructure.LogDebug "Receiving Act 2..."
+        let! act2Res = TransportStream.ReadExactAsync stream TransportStream.bolt08ActTwoLength
+        match act2Res with
+        | Error peerDisconnectedError -> return Error <| DisconnectedOnAct2 peerDisconnectedError
+        | Ok act2 ->
+            let peerCmd = ProcessActTwo(act2, nodeSecretKey)
+            match Peer.executeCommand peerAfterAct1 peerCmd with
+            | Error err -> return Error <| InvalidAct2 err
+            | Ok (ActTwoProcessed ((act3, _), _) as evt::[]) ->
+                let peerAfterAct2 = Peer.applyEvent peerAfterAct1 evt
+
+                Debug.Assert((TransportStream.bolt08ActThreeLength = act3.Length), SPrintF1 "act3 has wrong length (not %i)" TransportStream.bolt08ActThreeLength)
+
+                do! stream.WriteAsync(act3, 0, act3.Length) |> Async.AwaitTask
+                return Ok {
+                    NodeSecret = nodeSecret
+                    Peer = peerAfterAct2
+                    Client = client
+                }
+            | Ok evts ->
+                return failwith <| SPrintF1
+                    "DNL returned unexpected events when processing act2: %A" evts
+    }
+
     static member internal ConnectFromTransportListener (transportListener: TransportListener)
                                                         (peerNodeId: NodeId)
                                                         (peerId: PeerId)
@@ -234,40 +274,7 @@ type internal TransportStream =
         match connectRes with
         | Error err -> return Error <| TcpConnect err
         | Ok client ->
-            let stream = client.GetStream()
-
-            let nodeSecretKey = transportListener.NodeSecret.PrivateKey
-            let peer = Peer.CreateOutbound(peerId, peerNodeId, nodeSecretKey)
-            let act1, peerEncryptor = PeerChannelEncryptor.getActOne peer.ChannelEncryptor
-            Debug.Assert((TransportStream.bolt08ActOneLength = act1.Length), "act1 has wrong length")
-            let peerAfterAct1 = { peer with ChannelEncryptor = peerEncryptor }
-
-            // Send act1
-            do! stream.WriteAsync(act1, 0, act1.Length) |> Async.AwaitTask
-
-            // Receive act2
-            Infrastructure.LogDebug "Receiving Act 2..."
-            let! act2Res = TransportStream.ReadExactAsync stream TransportStream.bolt08ActTwoLength
-            match act2Res with
-            | Error peerDisconnectedError -> return Error <| DisconnectedOnAct2 peerDisconnectedError
-            | Ok act2 ->
-                let peerCmd = ProcessActTwo(act2, nodeSecretKey)
-                match Peer.executeCommand peerAfterAct1 peerCmd with
-                | Error err -> return Error <| InvalidAct2 err
-                | Ok (ActTwoProcessed ((act3, _), _) as evt::[]) ->
-                    let peerAfterAct2 = Peer.applyEvent peerAfterAct1 evt
-
-                    Debug.Assert((TransportStream.bolt08ActThreeLength = act3.Length), SPrintF1 "act3 has wrong length (not %i)" TransportStream.bolt08ActThreeLength)
-
-                    do! stream.WriteAsync(act3, 0, act3.Length) |> Async.AwaitTask
-                    return Ok {
-                        NodeSecret = transportListener.NodeSecret
-                        Peer = peerAfterAct2
-                        Client = client
-                    }
-                | Ok evts ->
-                    return failwith <| SPrintF1
-                        "DNL returned unexpected events when processing act2: %A" evts
+            return! TransportStream.ConnectHandshake client transportListener.NodeSecret peerNodeId
     }
 
     static member internal AcceptFromTransportListener (transportListener: TransportListener)
