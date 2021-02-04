@@ -358,18 +358,27 @@ type Lnd = {
         return TxId <| uint256 sendCoinsResp.Txid
     }
 
-    member this.ConnectTo (nodeId: NodeId) (ipEndPoint: IPEndPoint): Async<unit> =
-        let client = this.Client()
-        let nodeInfo = NodeInfo (nodeId.Value, ipEndPoint.Address.ToString(), ipEndPoint.Port)
+    member self.ConnectTo (nodeEndPoint: NodeEndPoint): Async<unit> =
+        let client = self.Client()
+        let nodeInfo =
+            let pubKey =
+                let stringified = nodeEndPoint.NodeId.ToString()
+                let unstringified = PubKey stringified
+                unstringified
+            NodeInfo (pubKey, nodeEndPoint.IPEndPoint.Address.ToString(), nodeEndPoint.IPEndPoint.Port)
         (Async.AwaitTask: Task -> Async<unit>) <| (client :> ILightningClient).ConnectTo nodeInfo
 
-    member this.OpenChannel (nodeId: NodeId)
-                            (ipEndPoint: IPEndPoint)
+    member self.OpenChannel (nodeEndPoint: NodeEndPoint)
                             (amount: Money)
                             (feeRate: FeeRatePerKw)
                                 : Async<Result<unit, OpenChannelResult>> = async {
-        let client = this.Client()
-        let nodeInfo = NodeInfo (nodeId.Value, ipEndPoint.Address.ToString(), ipEndPoint.Port)
+        let client = self.Client()
+        let nodeInfo =
+            let pubKey =
+                let stringified = nodeEndPoint.NodeId.ToString()
+                let unstringified = PubKey stringified
+                unstringified
+            NodeInfo (pubKey, nodeEndPoint.IPEndPoint.Address.ToString(), nodeEndPoint.IPEndPoint.Port)
         let openChannelReq =
             new OpenChannelRequest (
                 NodeInfo = nodeInfo,
@@ -383,7 +392,11 @@ type Lnd = {
     }
 
 type WalletInstance private (password: string, channelStore: ChannelStore, node: Node) =
+    static let oneWalletAtATime: Semaphore = new Semaphore(1, 1)
+
     static member New(): Async<WalletInstance> = async {
+        oneWalletAtATime.WaitOne() |> ignore
+
         let password = Path.GetRandomFileName()
         do!
             let privateKeyByteLength = 32
@@ -404,6 +417,8 @@ type WalletInstance private (password: string, channelStore: ChannelStore, node:
         member __.Dispose() =
             Account.WipeAll()
 
+            oneWalletAtATime.Release() |> ignore
+
     member __.Account: IAccount =
         Account.GetAllActiveAccounts() |> Seq.filter (fun x -> x.Currency = Currency.BTC) |> Seq.head
 
@@ -413,6 +428,8 @@ type WalletInstance private (password: string, channelStore: ChannelStore, node:
     member __.Password: string = password
     member __.ChannelStore: ChannelStore = channelStore
     member __.Node: Node = node
+    member self.NodeEndPoint =
+        Lightning.Network.EndPoint self.Node
 
     member self.WaitForBalance (minAmount: Money): Async<Money> = async {
         let btcAccount = self.Account :?> NormalUtxoAccount
@@ -426,6 +443,29 @@ type WalletInstance private (password: string, channelStore: ChannelStore, node:
             return! self.WaitForBalance minAmount
         | Fresh amount -> return Money(amount, MoneyUnit.BTC)
     }
+
+    member self.WaitForFundingConfirmed (channelId: ChannelIdentifier): Async<unit> =
+        let channelInfo = self.ChannelStore.ChannelInfo channelId
+        let fundingBroadcastButNotLockedData =
+            match channelInfo.Status with
+            | ChannelStatus.FundingBroadcastButNotLocked fundingBroadcastButNotLockedData
+                -> fundingBroadcastButNotLockedData
+            | status -> failwith (SPrintF1 "Unexpected channel status. Expected FundingBroadcastButNotLocked, got %A" status)
+        let rec waitForFundingConfirmed() = async {
+            let! remainingConfirmations = fundingBroadcastButNotLockedData.GetRemainingConfirmations()
+            if remainingConfirmations > 0u then
+                do! Async.Sleep 1000
+                return! waitForFundingConfirmed()
+            else
+                // TODO: the backend API doesn't give us any way to avoid
+                // the FundingOnChainLocationUnknown error, so just sleep
+                // to avoid the race condition. This waiting should really
+                // be implemented on the backend anyway.
+                do! Async.Sleep 10000
+                return ()
+        }
+        waitForFundingConfirmed()
+
 
 [<TestFixture>]
 type LN() =
@@ -486,7 +526,7 @@ type LN() =
 
         let! lndEndPoint = lnd.GetEndPoint()
         let! transferAmount = async {
-            let amount = Money(0.0002m, MoneyUnit.BTC)
+            let amount = Money(0.002m, MoneyUnit.BTC)
             let! accountBalance = walletInstance.WaitForBalance amount
             return TransferAmount (amount.ToDecimal MoneyUnit.BTC, accountBalance.ToDecimal MoneyUnit.BTC, Currency.BTC)
         }
@@ -505,27 +545,73 @@ type LN() =
         let _fundingTxId = UnwrapResult fundingTxIdRes "pendingChannel.Accept failed"
         bitcoind.GenerateBlocks (BlockHeightOffset32 minimumDepth) walletInstance.Address
 
-        do!
-            let channelInfo = walletInstance.ChannelStore.ChannelInfo channelId
-            let fundingBroadcastButNotLockedData =
-                match channelInfo.Status with
-                | ChannelStatus.FundingBroadcastButNotLocked fundingBroadcastButNotLockedData
-                    -> fundingBroadcastButNotLockedData
-                | status -> failwith (SPrintF1 "Unexpected channel status. Expected FundingBroadcastButNotLocked, got %A" status)
-            let rec waitForFundingConfirmed() = async {
-                let! remainingConfirmations = fundingBroadcastButNotLockedData.GetRemainingConfirmations()
-                if remainingConfirmations > 0u then
-                    do! Async.Sleep 1000
-                    return! waitForFundingConfirmed()
-                else
-                    // TODO: the backend API doesn't give us any way to avoid
-                    // the FundingOnChainLocationUnknown error, so just sleep
-                    // to avoid the race condition. This waiting should really
-                    // be implemented on the backend anyway.
-                    do! Async.Sleep 10000
-                    return ()
-            }
-            waitForFundingConfirmed()
+        do! walletInstance.WaitForFundingConfirmed channelId
+
+        let! lockFundingRes = Lightning.Network.LockChannelFunding walletInstance.Node channelId
+        UnwrapResult lockFundingRes "LockChannelFunding failed"
+
+        let channelInfo = walletInstance.ChannelStore.ChannelInfo channelId
+        match channelInfo.Status with
+        | ChannelStatus.Active -> ()
+        | status -> failwith (SPrintF1 "unexpected channel status. Expected Active, got %A" status)
+
+        return ()
+    }
+
+    [<Test>]
+    [<Ignore "WIP">]
+    member __.``can accept channel from LND``() = Async.RunSynchronously <| async {
+        use! walletInstance = WalletInstance.New()
+        use bitcoind = Bitcoind.Start()
+        use _electrumServer = ElectrumServer.Start bitcoind
+        use! lnd = Lnd.Start bitcoind
+
+        let! address = lnd.GetDepositAddress()
+        let blocksMinedToLnd = BlockHeightOffset32 1u
+        bitcoind.GenerateBlocks blocksMinedToLnd address
+
+        // Geewallet cannot use these outputs, even though they are encumbered with an output
+        // script from its wallet. This is because they come from coinbase. Coinbase outputs are
+        // the source of all bitcoin, and as of May 2020, Geewallet does not detect coins
+        // received straight from coinbase. In practice, this doesn't matter, since miners
+        // do not use Geewallet. If the coins were to be detected by geewallet,
+        // this test would still work. This comment is just here to avoid confusion.
+        let maturityDurationInNumberOfBlocks = BlockHeightOffset32 (uint32 NBitcoin.Consensus.RegTest.CoinbaseMaturity)
+        bitcoind.GenerateBlocks maturityDurationInNumberOfBlocks walletInstance.Address
+
+        // We confirm the one block mined to LND, by waiting for LND to see the chain
+        // at a height which has that block matured. The height at which the block will
+        // be matured is 100 on regtest. Since we initialally mined one block for LND,
+        // this will wait until the block height of LND reaches 1 (initial blocks mined)
+        // plus 100 blocks (coinbase maturity). This test has been parameterized
+        // to use the constants defined in NBitcoin, but you have to keep in mind that
+        // the coinbase maturity may be defined differently in other coins.
+        do! lnd.WaitForBlockHeight (BlockHeight.Zero + blocksMinedToLnd + maturityDurationInNumberOfBlocks)
+        do! lnd.WaitForBalance (Money(50UL, MoneyUnit.BTC))
+
+        let acceptChannelTask = Lightning.Network.AcceptChannel walletInstance.Node
+        let openChannelTask = async {
+            do! lnd.ConnectTo walletInstance.NodeEndPoint
+            return!
+                lnd.OpenChannel
+                    walletInstance.NodeEndPoint
+                    (Money(0.002m, MoneyUnit.BTC))
+                    (FeeRatePerKw 666u)
+        }
+
+        let! acceptChannelRes, openChannelRes = AsyncExtensions.MixedParallel2 acceptChannelTask openChannelTask
+        let channelId = UnwrapResult acceptChannelRes "AcceptChannel failed"
+        UnwrapResult openChannelRes "lnd.OpenChannel failed"
+
+        // Wait for the funding transaction to appear in mempool
+        while bitcoind.GetTxIdsInMempool().Length = 0 do
+            Thread.Sleep 500
+
+        // Mine blocks on top of the funding transaction to make it confirmed.
+        let minimumDepth = BlockHeightOffset32 6u
+        bitcoind.GenerateBlocks minimumDepth walletInstance.Address
+
+        do! walletInstance.WaitForFundingConfirmed channelId
 
         let! lockFundingRes = Lightning.Network.LockChannelFunding walletInstance.Node channelId
         UnwrapResult lockFundingRes "LockChannelFunding failed"

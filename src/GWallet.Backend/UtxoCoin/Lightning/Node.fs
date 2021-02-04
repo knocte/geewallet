@@ -143,7 +143,7 @@ type Node internal (channelStore: ChannelStore, transportListener: TransportList
                 return Ok <| PendingChannel(outgoingUnfundedChannel)
     }
 
-    member internal self.AcceptChannel (): Async<Result<TransactionIdentifier, IErrorMsg>> = async {
+    member internal self.AcceptChannel (): Async<Result<ChannelIdentifier, IErrorMsg>> = async {
         let! acceptPeerRes =
             PeerNode.AcceptAnyFromTransportListener self.TransportListener
         match acceptPeerRes with
@@ -170,9 +170,9 @@ type Node internal (channelStore: ChannelStore, transportListener: TransportList
                     |> ignore<bool>
                 return Error <| (NodeAcceptChannelError.AcceptChannel acceptChannelError :> IErrorMsg)
             | Ok fundedChannel ->
-                let txId = fundedChannel.FundingTxId
+                let channelId = fundedChannel.ChannelId
                 (fundedChannel :> IDisposable).Dispose()
-                return Ok txId
+                return Ok channelId
     }
 
     member internal self.SendMonoHopPayment (channelId: ChannelIdentifier)

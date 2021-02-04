@@ -162,7 +162,7 @@ module ElectrumClient =
             // when running in regtest mode we don't contact the electrum server to request the fee but instead return
             // a hard-coded value. This is because electrum gets its fee rate from bitcoind but bitcoind is usually not
             // able to estimate fee rates in regtest mode, so the electrum request would fail
-            async { return 0.0001m }
+            async { return 0.0005m }
         else
             EstimateFeeInternal numBlocksTarget stratumServer
 

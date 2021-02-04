@@ -8,7 +8,7 @@ open GWallet.Backend.FSharpUtil.UwpHacks
 
 
 type NodeEndPoint =
-    internal {
+    {
         NodeId: PublicKey
         IPEndPoint: IPEndPoint
     }
