@@ -14,9 +14,6 @@ open GWallet.Backend
 open GWallet.Backend.FSharpUtil
 open GWallet.Backend.FSharpUtil.UwpHacks
 
-type IErrorMsg =
-    abstract member Message: string
-
 type PeerDisconnectedError =
     {
         Abruptly: bool

@@ -12,6 +12,7 @@ open DotNetLightning.Utils
 open ResultUtils.Portability
 
 open GWallet.Backend
+open GWallet.Backend.FSharpUtil
 open GWallet.Backend.FSharpUtil.UwpHacks
 open GWallet.Backend.UtxoCoin
 

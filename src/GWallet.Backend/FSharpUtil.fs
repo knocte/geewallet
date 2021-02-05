@@ -90,13 +90,20 @@ module FSharpUtil =
         member __.Value = value
 
 
+    type IErrorMsg =
+        abstract member Message: string
+
     let UnwrapResult<'TRes, 'TError> (result: Result<'TRes, 'TError>)
                                      (msg: string)
                                          : 'TRes =
         match result with
         | Ok value -> value
         | Error err ->
-            failwith <| UwpHacks.SPrintF2 "error unwrapping Result %s: %s" msg (err.ToString())
+            let errorMsg =
+                match box err with
+                | :? IErrorMsg as e -> e.Message
+                | _ -> err.ToString()
+            failwith <| UwpHacks.SPrintF2 "error unwrapping Result: %s: %s" msg errorMsg
 
     let UnwrapOption<'T> (opt: Option<'T>)
                          (msg: string)

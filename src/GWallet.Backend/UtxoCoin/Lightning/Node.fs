@@ -10,6 +10,7 @@ open ResultUtils.Portability
 
 open GWallet.Backend
 open GWallet.Backend.UtxoCoin
+open GWallet.Backend.FSharpUtil
 open GWallet.Backend.FSharpUtil.UwpHacks
 
 type internal NodeOpenChannelError =
