@@ -22,7 +22,7 @@ module Settings =
         MinMaxHTLCValueInFlightMSat = LNMoney 10000L
         MaxChannelReserveSatoshis = Money 100000L
         MinMaxAcceptedHTLCs = 1us
-        MinDustLimitSatoshis = Money 100L
+        MinDustLimitSatoshis = Money 200L // Value used by lnd
         MaxDustLimitSatoshis = Money 10000000L
         // TODO make optional in DotNetLightning
         MaxMinimumDepth = BlockHeightOffset32 UInt32.MaxValue
@@ -43,8 +43,8 @@ module Settings =
         {
             NodeId = remoteNodeId
             ChannelPubKeys = channelPubKeys.ToChannelPubKeys()
-            DustLimitSatoshis = Money 5UL
-            MaxHTLCValueInFlightMSat = LNMoney 5000L
+            DustLimitSatoshis = Money 200UL
+            MaxHTLCValueInFlightMSat = LNMoney 10000L
             ChannelReserveSatoshis = funding / 100L
             HTLCMinimumMSat = LNMoney 1000L
             ToSelfDelay = BlockHeightOffset16 6us

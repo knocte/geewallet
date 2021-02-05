@@ -510,7 +510,6 @@ type LN() =
     do Config.SetRunModeToTesting()
 
     [<Category "GeewalletToGeewalletFunder">]
-    [<Ignore "does not work yet">]
     [<Test>]
     member __.``can open channel with geewallet (funder)``() = Async.RunSynchronously <| async {
         use! walletInstance = WalletInstance.New()
@@ -615,7 +614,6 @@ type LN() =
 
 
     [<Category "GeewalletToGeewalletFundee">]
-    [<Ignore "does not work yet">]
     [<Test>]
     member __.``can open channel with geewallet (fundee)``() = Async.RunSynchronously <| async {
         use! walletInstance = WalletInstance.NewFundee()
