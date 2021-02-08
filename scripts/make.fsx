@@ -308,26 +308,30 @@ let RunTests (suite: string) =
                 Arguments = sprintf "%s%s" maybeExtraArgs testAssembly.FullName
             }
 
-    let ourWalletToOurWalletEnd2EndTest() =
-        let testAssembly = findTestAssembly TEST_TYPE_END2END
+    let twoProcessTestNames =
+        [
+            "G2GChannelOpening"
+            "G2GMonoHopUnidirectionalPayments"
+        ]
 
+    let runTwoProcessTest testAssembly testName =
         let funderRunnerCommand =
-            nunitCommandFor testAssembly (Some [ ("include", "G2GFunder") ])
+            nunitCommandFor testAssembly (Some [ ("include", testName + "Funder") ])
 
         let fundeeRunnerCommand =
-            nunitCommandFor testAssembly (Some [ ("include", "G2GFundee") ])
+            nunitCommandFor testAssembly (Some [ ("include", testName + "Fundee") ])
 
         let funderRun = async {
             let res = Process.Execute(funderRunnerCommand, Echo.All)
             if res.ExitCode <> 0 then
-                Console.Error.WriteLine "Funder test failed"
+                Console.Error.WriteLine (testName + "Funder test failed")
                 Environment.Exit 1
         }
 
         let fundeeRun = async {
             let res = Process.Execute(fundeeRunnerCommand, Echo.All)
             if res.ExitCode <> 0 then
-                Console.Error.WriteLine "Fundee test failed"
+                Console.Error.WriteLine (testName + "Fundee test failed")
                 Environment.Exit 1
         }
 
@@ -335,6 +339,12 @@ let RunTests (suite: string) =
         |> Async.Parallel
         |> Async.RunSynchronously
         |> ignore
+
+    let ourWalletToOurWalletEnd2EndTests () =
+        let testAssembly = findTestAssembly TEST_TYPE_END2END
+
+        for testName in twoProcessTestNames do
+            runTwoProcessTest testAssembly testName
 
     Console.WriteLine (sprintf "Running %s tests..." suite)
     Console.WriteLine ()
@@ -344,10 +354,17 @@ let RunTests (suite: string) =
 
     let testAssembly = findTestAssembly suite
 
+    let allTwoProcessTestNamesToExclude =
+        twoProcessTestNames
+        |> Seq.ofList
+        |> Seq.map (fun testName -> [ testName + "Funder"; testName + "Fundee" ])
+        |> Seq.concat
+        |> String.concat ","
+
     let runnerCommand =
         let maybeExcludeArgument =
             if suite = TEST_TYPE_END2END then
-                Some [ ("exclude", "G2GFunder,G2GFundee") ]
+                Some [ ("exclude", allTwoProcessTestNamesToExclude) ]
             else
                 None
         nunitCommandFor testAssembly maybeExcludeArgument
@@ -360,7 +377,7 @@ let RunTests (suite: string) =
 
     if suite = TEST_TYPE_END2END then
         Console.WriteLine "First end2end tests finished running, now about to launch geewallet2geewallet ones..."
-        ourWalletToOurWalletEnd2EndTest()
+        ourWalletToOurWalletEnd2EndTests ()
 
 let maybeTarget = GatherTarget (Misc.FsxArguments(), None)
 match maybeTarget with
