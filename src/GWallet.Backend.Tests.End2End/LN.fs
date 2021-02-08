@@ -509,7 +509,7 @@ type WalletInstance private (password: string, channelStore: ChannelStore, node:
 type LN() =
     do Config.SetRunModeToTesting()
 
-    [<Category "GeewalletToGeewalletFunder">]
+    [<Category "G2GFunder">]
     [<Test>]
     member __.``can open channel with geewallet (funder)``() = Async.RunSynchronously <| async {
         use! walletInstance = WalletInstance.New()
@@ -613,7 +613,7 @@ type LN() =
     }
 
 
-    [<Category "GeewalletToGeewalletFundee">]
+    [<Category "G2GFundee">]
     [<Test>]
     member __.``can open channel with geewallet (fundee)``() = Async.RunSynchronously <| async {
         use! walletInstance = WalletInstance.NewFundee()

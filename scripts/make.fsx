@@ -252,7 +252,7 @@ let RunTests (suite: string) =
             failwithf "File not found: %s" testAssembly.FullName
         testAssembly
 
-    // string*string means flag*value, e.g. "include" * "GeewalletToGeewalletFunder"
+    // string*string means flag*value, e.g. "include" * "G2GFunder"
     let nunitCommandFor (testAssembly: FileInfo) (maybeArgs: Option<List<string*string>>): ProcessDetails =
         let convertArgsToString (charPrefixForFlag: char) =
             match maybeArgs with
@@ -312,10 +312,10 @@ let RunTests (suite: string) =
         let testAssembly = findTestAssembly TEST_TYPE_END2END
 
         let funderRunnerCommand =
-            nunitCommandFor testAssembly (Some [ ("include", "GeewalletToGeewalletFunder") ])
+            nunitCommandFor testAssembly (Some [ ("include", "G2GFunder") ])
 
         let fundeeRunnerCommand =
-            nunitCommandFor testAssembly (Some [ ("include", "GeewalletToGeewalletFundee") ])
+            nunitCommandFor testAssembly (Some [ ("include", "G2GFundee") ])
 
         let funderRun = async {
             let res = Process.Execute(funderRunnerCommand, Echo.All)
@@ -347,7 +347,7 @@ let RunTests (suite: string) =
     let runnerCommand =
         let maybeExcludeArgument =
             if suite = TEST_TYPE_END2END then
-                Some [ ("exclude", "GeewalletToGeewalletFunder,GeewalletToGeewalletFundee") ]
+                Some [ ("exclude", "G2GFunder,G2GFundee") ]
             else
                 None
         nunitCommandFor testAssembly maybeExcludeArgument
