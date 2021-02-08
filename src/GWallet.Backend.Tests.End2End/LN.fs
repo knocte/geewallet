@@ -509,9 +509,12 @@ type WalletInstance private (password: string, channelStore: ChannelStore, node:
 type LN() =
     do Config.SetRunModeToTesting()
 
+    let walletToWalletTestPayment0Amount = Money (0.01m, MoneyUnit.BTC)
+    let walletToWalletTestPayment1Amount = Money (0.015m, MoneyUnit.BTC)
+
     [<Category "G2GFunder">]
     [<Test>]
-    member __.``can open channel with geewallet (funder)``() = Async.RunSynchronously <| async {
+    member __.``can open channel, and send mono-hop payments, with geewallet (funder)``() = Async.RunSynchronously <| async {
         use! walletInstance = WalletInstance.New()
         use bitcoind = Bitcoind.Start()
         use _electrumServer = ElectrumServer.Start bitcoind
@@ -559,6 +562,7 @@ type LN() =
         let consideredConfirmedAmountOfBlocksPlusOne = BlockHeightOffset32 7u
         bitcoind.GenerateBlocks consideredConfirmedAmountOfBlocksPlusOne walletInstance.Address
 
+        let fundingAmount = Money(0.1m, MoneyUnit.BTC)
         let! transferAmount = async {
             let amount = Money(0.1m, MoneyUnit.BTC)
             let! accountBalance = walletInstance.WaitForBalance amount
@@ -609,13 +613,52 @@ type LN() =
         | ChannelStatus.Active -> ()
         | status -> failwith (SPrintF1 "unexpected channel status. Expected Active, got %A" status)
 
+        if Money(channelInfo.Balance, MoneyUnit.BTC) <> fundingAmount then
+            failwith "balance does not match funding amount"
+
+        let! sendMonoHopPayment0Res =
+            let transferAmount =
+                let accountBalance = Money(channelInfo.SpendableBalance, MoneyUnit.BTC)
+                TransferAmount (walletToWalletTestPayment0Amount.ToDecimal MoneyUnit.BTC, accountBalance.ToDecimal MoneyUnit.BTC, Currency.BTC)
+            Lightning.Network.SendMonoHopPayment
+                walletInstance.Node
+                channelId
+                transferAmount
+        UnwrapResult sendMonoHopPayment0Res "SendMonoHopPayment failed"
+
+        let channelInfoAfterPayment0 = walletInstance.ChannelStore.ChannelInfo channelId
+        match channelInfo.Status with
+        | ChannelStatus.Active -> ()
+        | status -> failwith (SPrintF1 "unexpected channel status. Expected Active, got %A" status)
+
+        if Money(channelInfoAfterPayment0.Balance, MoneyUnit.BTC) <> fundingAmount - walletToWalletTestPayment0Amount then
+            failwith "incorrect balance after payment 0"
+
+        let! sendMonoHopPayment1Res =
+            let transferAmount =
+                let accountBalance = Money(channelInfo.SpendableBalance, MoneyUnit.BTC)
+                TransferAmount (walletToWalletTestPayment1Amount.ToDecimal MoneyUnit.BTC, accountBalance.ToDecimal MoneyUnit.BTC, Currency.BTC)
+            Lightning.Network.SendMonoHopPayment
+                walletInstance.Node
+                channelId
+                transferAmount
+        UnwrapResult sendMonoHopPayment1Res "SendMonoHopPayment failed"
+
+        let channelInfoAfterPayment1 = walletInstance.ChannelStore.ChannelInfo channelId
+        match channelInfo.Status with
+        | ChannelStatus.Active -> ()
+        | status -> failwith (SPrintF1 "unexpected channel status. Expected Active, got %A" status)
+
+        if Money(channelInfoAfterPayment1.Balance, MoneyUnit.BTC) <> fundingAmount - walletToWalletTestPayment0Amount - walletToWalletTestPayment1Amount then
+            failwith "incorrect balance after payment 1"
+
         return ()
     }
 
 
     [<Category "G2GFundee">]
     [<Test>]
-    member __.``can open channel with geewallet (fundee)``() = Async.RunSynchronously <| async {
+    member __.``can open channel, and send mono-hop payments, with geewallet (fundee)``() = Async.RunSynchronously <| async {
         use! walletInstance = WalletInstance.NewFundee()
         let! pendingChannelRes =
             Lightning.Network.AcceptChannel
@@ -630,6 +673,33 @@ type LN() =
         match channelInfo.Status with
         | ChannelStatus.Active -> ()
         | status -> failwith (SPrintF1 "unexpected channel status. Expected Active, got %A" status)
+
+        if Money(channelInfo.Balance, MoneyUnit.BTC) <> Money(0.0m, MoneyUnit.BTC) then
+            failwith "incorrect balance after accepting channel"
+
+        let! receiveMonoHopPaymentRes =
+            Lightning.Network.ReceiveMonoHopPayment walletInstance.Node channelId
+        UnwrapResult receiveMonoHopPaymentRes "ReceiveMonoHopPayment failed"
+
+        let channelInfoAfterPayment0 = walletInstance.ChannelStore.ChannelInfo channelId
+        match channelInfo.Status with
+        | ChannelStatus.Active -> ()
+        | status -> failwith (SPrintF1 "unexpected channel status. Expected Active, got %A" status)
+
+        if Money(channelInfoAfterPayment0.Balance, MoneyUnit.BTC) <> walletToWalletTestPayment0Amount then
+            failwith "incorrect balance after receiving payment 0"
+
+        let! receiveMonoHopPaymentRes =
+            Lightning.Network.ReceiveMonoHopPayment walletInstance.Node channelId
+        UnwrapResult receiveMonoHopPaymentRes "ReceiveMonoHopPayment failed"
+
+        let channelInfoAfterPayment1 = walletInstance.ChannelStore.ChannelInfo channelId
+        match channelInfo.Status with
+        | ChannelStatus.Active -> ()
+        | status -> failwith (SPrintF1 "unexpected channel status. Expected Active, got %A" status)
+
+        if Money(channelInfoAfterPayment1.Balance, MoneyUnit.BTC) <> walletToWalletTestPayment0Amount + walletToWalletTestPayment1Amount then
+            failwith "incorrect balance after receiving payment 1"
 
         return ()
     }

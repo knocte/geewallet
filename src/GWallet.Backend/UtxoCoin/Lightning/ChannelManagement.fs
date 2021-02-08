@@ -3,6 +3,7 @@
 open System.IO
 
 open DotNetLightning.Channel
+open NBitcoin
 
 open GWallet.Backend
 open GWallet.Backend.UtxoCoin
@@ -52,11 +53,11 @@ type ChannelInfo =
                                                      : ChannelInfo = {
         ChannelId = serializedChannel.ChannelId
         IsFunder = serializedChannel.IsFunder
-        Balance = serializedChannel.Balance().BTC |> decimal
-        SpendableBalance = serializedChannel.SpendableBalance().BTC |> decimal
-        Capacity = serializedChannel.Capacity().ToUnit(NBitcoin.MoneyUnit.BTC)
-        MaxBalance = serializedChannel.MaxBalance().BTC |> decimal
-        MinBalance = serializedChannel.MinBalance().BTC |> decimal
+        Balance = serializedChannel.Balance().ToMoney().ToUnit MoneyUnit.BTC
+        SpendableBalance = serializedChannel.SpendableBalance().ToMoney().ToUnit MoneyUnit.BTC
+        Capacity = serializedChannel.Capacity().ToUnit MoneyUnit.BTC
+        MaxBalance = serializedChannel.MaxBalance().ToMoney().ToUnit MoneyUnit.BTC
+        MinBalance = serializedChannel.MinBalance().ToMoney().ToUnit MoneyUnit.BTC
         FundingTxId = TransactionIdentifier.FromHash serializedChannel.Commitments.FundingScriptCoin.Outpoint.Hash
         Currency = currency
         Status =
