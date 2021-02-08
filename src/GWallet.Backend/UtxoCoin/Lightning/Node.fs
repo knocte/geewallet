@@ -101,12 +101,7 @@ type Node internal (channelStore: ChannelStore, transportListener: TransportList
             (self.TransportListener :> IDisposable).Dispose()
 
     static member internal AccountPrivateKeyToNodeSecret (accountKey: Key) =
-        let privateKeyBytesLength = 32
-        let bytes: array<byte> = Array.zeroCreate privateKeyBytesLength
-        use bytesStream = new MemoryStream (bytes)
-        let stream = NBitcoin.BitcoinStream (bytesStream, true)
-        accountKey.ReadWrite stream
-        NBitcoin.ExtKey bytes
+        NBitcoin.ExtKey (accountKey.ToBytes ())
 
     member internal self.OpenChannel (nodeEndPoint: NodeEndPoint)
                                      (channelCapacity: TransferAmount)

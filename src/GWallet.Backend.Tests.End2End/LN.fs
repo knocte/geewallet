@@ -394,16 +394,8 @@ type Lnd = {
 type WalletInstance private (password: string, channelStore: ChannelStore, node: Node) =
     static let oneWalletAtATime: Semaphore = new Semaphore(1, 1)
 
-    // NOTE: the func below is duplicated from GWallet.Backend.UtxoCoin.Lightning.Node class cause it's internal and
-    // cannot be made public (otherwise we expose NBitcoin types in the API, which makes GWallet.Backend consumers need
-    // to include this transitive dependency as normal dependency too. See https://github.com/MetacoSA/NBitcoin/pull/969
     static member internal AccountPrivateKeyToNodeSecret (accountKey: Key) =
-        let privateKeyBytesLength = 32
-        let bytes: array<byte> = Array.zeroCreate privateKeyBytesLength
-        use bytesStream = new MemoryStream (bytes)
-        let stream = NBitcoin.BitcoinStream (bytesStream, true)
-        accountKey.ReadWrite stream
-        NBitcoin.ExtKey bytes
+        NBitcoin.ExtKey (accountKey.ToBytes())
 
     static member New (listenEndpointOpt: Option<IPEndPoint>) (privateKeyOpt: Option<Key>): Async<WalletInstance> = async {
         oneWalletAtATime.WaitOne() |> ignore
@@ -414,13 +406,7 @@ type WalletInstance private (password: string, channelStore: ChannelStore, node:
                 match privateKeyOpt with
                 | Some privateKey -> privateKey
                 | None -> new Key()
-            // TODO: this code below is almost same as AccountPrivateKeyToNodeSecret, we should reuse
-            let privateKeyBytesLength = 32
-            let bytes: array<byte> = Array.zeroCreate privateKeyBytesLength
-            use bytesStream = new MemoryStream(bytes)
-            let stream = NBitcoin.BitcoinStream(bytesStream, true)
-            privateKey.ReadWrite stream
-            bytes
+            privateKey.ToBytes()
 
         do! Account.CreateAllAccounts privateKeyBytes password
         let btcAccount =
