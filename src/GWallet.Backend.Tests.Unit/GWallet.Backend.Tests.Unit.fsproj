@@ -84,6 +84,7 @@
     <Compile Include="ServerReference.fs" />
     <Compile Include="FSharpUtil.fs" />
     <Compile Include="ExceptionMarshalling.fs" />
+    <Compile Include="ChannelMarshalling.fs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="mscorlib" />
@@ -143,6 +144,24 @@
     </Reference>
     <Reference Include="System.Runtime.Extensions">
       <HintPath>..\..\packages\System.Runtime.Extensions.4.3.0\lib\net462\System.Runtime.Extensions.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Numerics.Vectors">
+      <HintPath>..\..\packages\System.Numerics.Vectors.4.5.0\lib\net46\System.Numerics.Vectors.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Runtime.CompilerServices.Unsafe">
+      <HintPath>..\..\packages\System.Runtime.CompilerServices.Unsafe.4.5.2\lib\netstandard2.0\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Memory">
+      <HintPath>..\..\packages\System.Memory.4.5.3\lib\netstandard2.0\System.Memory.dll</HintPath>
+    </Reference>
+    <Reference Include="DotNetLightning.Core">
+      <HintPath>..\..\packages\DotNetLightning.Kiss.1.1.2-date20210209-0415-git-1668246\lib\netstandard2.0\DotNetLightning.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="InternalBech32Encoder">
+      <HintPath>..\..\packages\DotNetLightning.Kiss.1.1.2-date20210209-0415-git-1668246\lib\netstandard2.0\InternalBech32Encoder.dll</HintPath>
+    </Reference>
+    <Reference Include="ResultUtils">
+      <HintPath>..\..\packages\DotNetLightning.Kiss.1.1.2-date20210209-0415-git-1668246\lib\netstandard2.0\ResultUtils.dll</HintPath>
     </Reference>
   </ItemGroup>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
