@@ -572,27 +572,7 @@ type LN() =
         let _fundingTxId = UnwrapResult fundingTxIdRes "pendingChannel.Accept failed"
         bitcoind.GenerateBlocks (BlockHeightOffset32 minimumDepth) walletInstance.Address
 
-        do!
-            let channelInfo = walletInstance.ChannelStore.ChannelInfo channelId
-            let fundingBroadcastButNotLockedData =
-                match channelInfo.Status with
-                | ChannelStatus.FundingBroadcastButNotLocked fundingBroadcastButNotLockedData
-                    -> fundingBroadcastButNotLockedData
-                | status -> failwith (SPrintF1 "Unexpected channel status. Expected FundingBroadcastButNotLocked, got %A" status)
-            let rec waitForFundingConfirmed() = async {
-                let! remainingConfirmations = fundingBroadcastButNotLockedData.GetRemainingConfirmations()
-                if remainingConfirmations > 0u then
-                    do! Async.Sleep 1000
-                    return! waitForFundingConfirmed()
-                else
-                    // TODO: the backend API doesn't give us any way to avoid
-                    // the FundingOnChainLocationUnknown error, so just sleep
-                    // to avoid the race condition. This waiting should really
-                    // be implemented on the backend anyway.
-                    do! Async.Sleep 10000
-                    return ()
-            }
-            waitForFundingConfirmed()
+        do! walletInstance.WaitForFundingConfirmed channelId
 
         let! lockFundingRes = Lightning.Network.ConnectLockChannelFunding walletInstance.NodeServer.NodeClient channelId
         UnwrapResult lockFundingRes "LockChannelFunding failed"
@@ -696,27 +676,7 @@ type LN() =
         let _fundingTxId = UnwrapResult fundingTxIdRes "pendingChannel.Accept failed"
         bitcoind.GenerateBlocks (BlockHeightOffset32 minimumDepth) walletInstance.Address
 
-        do!
-            let channelInfo = walletInstance.ChannelStore.ChannelInfo channelId
-            let fundingBroadcastButNotLockedData =
-                match channelInfo.Status with
-                | ChannelStatus.FundingBroadcastButNotLocked fundingBroadcastButNotLockedData
-                    -> fundingBroadcastButNotLockedData
-                | status -> failwith (SPrintF1 "Unexpected channel status. Expected FundingBroadcastButNotLocked, got %A" status)
-            let rec waitForFundingConfirmed() = async {
-                let! remainingConfirmations = fundingBroadcastButNotLockedData.GetRemainingConfirmations()
-                if remainingConfirmations > 0u then
-                    do! Async.Sleep 1000
-                    return! waitForFundingConfirmed()
-                else
-                    // TODO: the backend API doesn't give us any way to avoid
-                    // the FundingOnChainLocationUnknown error, so just sleep
-                    // to avoid the race condition. This waiting should really
-                    // be implemented on the backend anyway.
-                    do! Async.Sleep 10000
-                    return ()
-            }
-            waitForFundingConfirmed()
+        do! walletInstance.WaitForFundingConfirmed channelId
 
         let! lockFundingRes = Lightning.Network.ConnectLockChannelFunding walletInstance.NodeServer.NodeClient channelId
         UnwrapResult lockFundingRes "LockChannelFunding failed"
