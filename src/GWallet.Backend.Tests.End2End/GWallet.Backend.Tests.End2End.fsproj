@@ -53,9 +53,14 @@
     <Content Include="..\GWallet.Frontend.Console\App.config">
       <Link>App.config</Link>
     </Content>
+    <Compile Include="ProcessWrapper.fs" />
+    <Compile Include="Bitcoind.fs" />
+    <Compile Include="ElectrumServer.fs" />
+    <Compile Include="Lnd.fs" />
     <Compile Include="..\GWallet.Backend\Properties\CommonAssemblyInfo.fs">
       <Link>Properties\CommonAssemblyInfo.fs</Link>
     </Compile>
+    <Compile Include="WalletInstance.fs" />
     <Compile Include="LN.fs" />
   </ItemGroup>
   <ItemGroup>
