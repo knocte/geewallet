@@ -6,17 +6,16 @@ open System.Net
 open System.Threading
 
 open NBitcoin
+open DotNetLightning.Utils.Primitives
 
 open GWallet.Backend
 open GWallet.Backend.UtxoCoin
 open GWallet.Backend.UtxoCoin.Lightning
+open GWallet.Backend.FSharpUtil
 open GWallet.Backend.FSharpUtil.UwpHacks
 
 type WalletInstance private (password: string, channelStore: ChannelStore, nodeServer: NodeServer) =
     static let oneWalletAtATime: Semaphore = new Semaphore(1, 1)
-
-    static member internal AccountPrivateKeyToNodeSecret (accountKey: Key) =
-        ExtKey (accountKey.ToBytes())
 
     static member New (listenEndpointOpt: Option<IPEndPoint>) (privateKeyOpt: Option<Key>): Async<WalletInstance> = async {
         oneWalletAtATime.WaitOne() |> ignore
@@ -95,3 +94,70 @@ type WalletInstance private (password: string, channelStore: ChannelStore, nodeS
                 return ()
         }
         waitForFundingConfirmed()
+
+    member self.FundByMining (bitcoind: Bitcoind)
+                             (lnd: Lnd)
+                                 : Async<unit> = async {
+        do! lnd.FundByMining bitcoind self.Address
+
+        // fund geewallet
+        let geewalletAccountAmount = Money (25m, MoneyUnit.BTC)
+        let feeRate = FeeRatePerKw 2500u
+        let! _txid = lnd.SendCoins geewalletAccountAmount self.Address feeRate
+
+        // wait for lnd's transaction to appear in mempool
+        while bitcoind.GetTxIdsInMempool().Length = 0 do
+            Thread.Sleep 500
+
+        // We want to make sure Geewallet considers the money received.
+        // A typical number of blocks that is almost universally considered
+        // 100% confirmed, is 6. Therefore we mine 7 blocks. Because we have
+        // waited for the transaction to appear in bitcoind's mempool, we
+        // can assume that the first of the 7 blocks will include the
+        // transaction sending money to Geewallet. The next 6 blocks will
+        // bury the first block, so that the block containing the transaction
+        // will be 6 deep at the end of the following call to generateBlocks.
+        // At that point, the 0.25 regtest coins from the above call to sendcoins
+        // are considered arrived to Geewallet.
+        let consideredConfirmedAmountOfBlocksPlusOne = BlockHeightOffset32 7u
+        bitcoind.GenerateBlocks consideredConfirmedAmountOfBlocksPlusOne self.Address
+    }
+
+    member self.OpenChannelWithFundee (bitcoind: Bitcoind) (nodeEndPoint: NodeEndPoint)
+                                          : Async<ChannelIdentifier*Money> = async {
+        let fundingAmount = Money(0.1m, MoneyUnit.BTC)
+        let! transferAmount = async {
+            let! accountBalance = self.WaitForBalance fundingAmount
+            return TransferAmount (fundingAmount.ToDecimal MoneyUnit.BTC, accountBalance.ToDecimal MoneyUnit.BTC, Currency.BTC)
+        }
+        let! metadata = ChannelManager.EstimateChannelOpeningFee (self.Account :?> NormalUtxoAccount) transferAmount
+        let! pendingChannelRes =
+            Lightning.Network.OpenChannel
+                self.NodeServer.NodeClient
+                nodeEndPoint
+                transferAmount
+                metadata
+                self.Password
+        let pendingChannel = UnwrapResult pendingChannelRes "OpenChannel failed"
+        let minimumDepth = (pendingChannel :> IChannelToBeOpened).ConfirmationsRequired
+        let channelId = (pendingChannel :> IChannelToBeOpened).ChannelId
+        let! fundingTxIdRes = pendingChannel.Accept()
+        let _fundingTxId = UnwrapResult fundingTxIdRes "pendingChannel.Accept failed"
+        bitcoind.GenerateBlocks (BlockHeightOffset32 minimumDepth) self.Address
+
+        do! self.WaitForFundingConfirmed channelId
+
+        let! lockFundingRes = Lightning.Network.ConnectLockChannelFunding self.NodeServer.NodeClient channelId
+        UnwrapResult lockFundingRes "LockChannelFunding failed"
+
+        let channelInfo = self.ChannelStore.ChannelInfo channelId
+        match channelInfo.Status with
+        | ChannelStatus.Active -> ()
+        | status -> failwith (SPrintF1 "unexpected channel status. Expected Active, got %A" status)
+
+        if Money(channelInfo.Balance, MoneyUnit.BTC) <> fundingAmount then
+            failwith "balance does not match funding amount"
+
+        return channelId, fundingAmount
+    }
+
