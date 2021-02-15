@@ -166,7 +166,6 @@ type Lnd = {
     }
 
     member self.FundByMining (bitcoind: Bitcoind)
-                             (address: BitcoinAddress)
                                  : Async<unit> = async {
         let! lndDepositAddress = self.GetDepositAddress()
         let blocksMinedToLnd = BlockHeightOffset32 1u
@@ -179,7 +178,11 @@ type Lnd = {
         // do not use Geewallet. If the coins were to be detected by geewallet,
         // this test would still work. This comment is just here to avoid confusion.
         let maturityDurationInNumberOfBlocks = BlockHeightOffset32 (uint32 NBitcoin.Consensus.RegTest.CoinbaseMaturity)
-        bitcoind.GenerateBlocks maturityDurationInNumberOfBlocks address
+
+        let someMinerThrowAwayAddress =
+            let key = Key()
+            key.PubKey.GetScriptAddress Network.RegTest
+        bitcoind.GenerateBlocks maturityDurationInNumberOfBlocks someMinerThrowAwayAddress
 
         // We confirm the one block mined to LND, by waiting for LND to see the chain
         // at a height which has that block matured. The height at which the block will

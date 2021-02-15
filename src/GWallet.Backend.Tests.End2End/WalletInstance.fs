@@ -98,7 +98,7 @@ type WalletInstance private (password: string, channelStore: ChannelStore, nodeS
     member self.FundByMining (bitcoind: Bitcoind)
                              (lnd: Lnd)
                                  : Async<unit> = async {
-        do! lnd.FundByMining bitcoind self.Address
+        do! lnd.FundByMining bitcoind
 
         // fund geewallet
         let geewalletAccountAmount = Money (25m, MoneyUnit.BTC)

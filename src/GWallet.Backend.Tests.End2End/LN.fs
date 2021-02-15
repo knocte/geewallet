@@ -181,7 +181,7 @@ type LN() =
         use _electrumServer = ElectrumServer.Start bitcoind
         use! lnd = Lnd.Start bitcoind
 
-        do! lnd.FundByMining bitcoind walletInstance.Address
+        do! lnd.FundByMining bitcoind
 
         let acceptChannelTask = Lightning.Network.AcceptChannel walletInstance.NodeServer
         let openChannelTask = async {
