@@ -1,4 +1,3 @@
-
 namespace GWallet
 
 open System.Reflection
@@ -21,5 +20,4 @@ open System.Reflection
 [<assembly: AssemblyVersion("0.3.239.0")>]
 [<assembly: AssemblyFileVersion("0.3.239.0")>]
 
-do
-    ()
+do ()

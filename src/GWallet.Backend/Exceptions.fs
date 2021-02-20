@@ -14,4 +14,3 @@ exception AddressWithInvalidChecksum of Option<string>
 exception AccountAlreadyAdded
 
 exception InvalidDestinationAddress of msg: string
-

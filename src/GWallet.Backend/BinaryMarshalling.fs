@@ -7,19 +7,19 @@ open System.Runtime.Serialization.Formatters.Binary
 
 module BinaryMarshalling =
 
-    let private binFormatter = BinaryFormatter()
+    let private binFormatter = BinaryFormatter ()
 
-    let Serialize obj: array<byte> =
-        use memStream = new MemoryStream()
-        binFormatter.Serialize(memStream, obj)
-        memStream.ToArray()
+    let Serialize obj : array<byte> =
+        use memStream = new MemoryStream ()
+        binFormatter.Serialize (memStream, obj)
+        memStream.ToArray ()
 
     let Deserialize (buffer: array<byte>) =
-        use memStream = new MemoryStream(buffer)
+        use memStream = new MemoryStream (buffer)
         memStream.Position <- 0L
         binFormatter.Deserialize memStream
 
-    let SerializeToString obj: string =
+    let SerializeToString obj : string =
         let byteArray = Serialize obj
         Convert.ToBase64String byteArray
 

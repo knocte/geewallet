@@ -3,7 +3,6 @@
 open System
 
 type IBlockchainFeeInfo =
-    abstract FeeEstimationTime: DateTime
-    abstract FeeValue: decimal
-    abstract Currency: Currency
-
+    abstract FeeEstimationTime : DateTime
+    abstract FeeValue : decimal
+    abstract Currency : Currency

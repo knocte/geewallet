@@ -31,40 +31,45 @@ type RpcErrorCode =
 type ServerCannotBeResolvedException =
     inherit CommunicationUnsuccessfulException
 
-    new(message: string, innerException: Exception) =
-        {
-            inherit CommunicationUnsuccessfulException(message, innerException)
-        }
+    new (message: string, innerException: Exception) =
+        { inherit CommunicationUnsuccessfulException (message, innerException) }
+
     new (info: SerializationInfo, context: StreamingContext) =
         { inherit CommunicationUnsuccessfulException (info, context) }
 
 type ServerUnavailableException =
     inherit CommunicationUnsuccessfulException
 
-    new(message: string, innerException: Exception) =
-        {
-            inherit CommunicationUnsuccessfulException(message, innerException)
-        }
+    new (message: string, innerException: Exception) =
+        { inherit CommunicationUnsuccessfulException (message, innerException) }
+
     new (info: SerializationInfo, context: StreamingContext) =
         { inherit CommunicationUnsuccessfulException (info, context) }
 
 type ServerChannelNegotiationException =
     inherit CommunicationUnsuccessfulException
 
-    new(message: string, innerException: Exception) =
-        {
-            inherit CommunicationUnsuccessfulException(message, innerException)
-        }
-    new(message: string, webExStatusCode: WebExceptionStatus, innerException: Exception) =
-        {
-            inherit CommunicationUnsuccessfulException(SPrintF2 "%s (WebErr: %s)" message (webExStatusCode.ToString()),
-                                                    innerException)
-        }
-    new(message: string, cloudFlareError: CloudFlareError, innerException: Exception) =
-        {
-            inherit CommunicationUnsuccessfulException(SPrintF2 "%s (CfErr: %s)" message (cloudFlareError.ToString()),
-                                                    innerException)
-        }
+    new (message: string, innerException: Exception) =
+        { inherit CommunicationUnsuccessfulException (message, innerException) }
+
+    new (message: string,
+         webExStatusCode: WebExceptionStatus,
+         innerException: Exception) =
+        { inherit CommunicationUnsuccessfulException (SPrintF2
+                                                          "%s (WebErr: %s)"
+                                                          message
+                                                          (webExStatusCode.ToString ()),
+                                                      innerException) }
+
+    new (message: string,
+         cloudFlareError: CloudFlareError,
+         innerException: Exception) =
+        { inherit CommunicationUnsuccessfulException (SPrintF2
+                                                          "%s (CfErr: %s)"
+                                                          message
+                                                          (cloudFlareError.ToString ()),
+                                                      innerException) }
+
     new (info: SerializationInfo, context: StreamingContext) =
         { inherit CommunicationUnsuccessfulException (info, context) }
 
@@ -72,9 +77,8 @@ type ServerRestrictiveException =
     inherit CommunicationUnsuccessfulException
 
     new (message: string, innerException: Exception) =
-        {
-            inherit CommunicationUnsuccessfulException (message, innerException)
-        }
+        { inherit CommunicationUnsuccessfulException (message, innerException) }
+
     new (info: SerializationInfo, context: StreamingContext) =
         { inherit CommunicationUnsuccessfulException (info, context) }
 
@@ -82,10 +86,10 @@ type UnhandledWebException =
     inherit Exception
 
     new (status: WebExceptionStatus, innerException: Exception) =
-        {
-            inherit Exception (SPrintF1 "Backend not prepared for this WebException with Status[%i]"
-                                       (int status),
-                                       innerException)
-        }
+        { inherit Exception (SPrintF1
+                                 "Backend not prepared for this WebException with Status[%i]"
+                                 (int status),
+                             innerException) }
+
     new (info: SerializationInfo, context: StreamingContext) =
         { inherit Exception (info, context) }

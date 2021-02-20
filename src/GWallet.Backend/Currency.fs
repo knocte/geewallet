@@ -18,14 +18,14 @@ type Currency =
     // </NOTE>
 
 #if STRICTER_COMPILATION_BUT_WITH_REFLECTION_AT_RUNTIME
-    static member ToStrings() =
-        Microsoft.FSharp.Reflection.FSharpType.GetUnionCases(typeof<Currency>)
-            |> Array.map (fun info -> info.Name)
+    static member ToStrings () =
+        Microsoft.FSharp.Reflection.FSharpType.GetUnionCases (typeof<Currency>)
+        |> Array.map (fun info -> info.Name)
 #endif
 
-    static member GetAll(): seq<Currency> =
+    static member GetAll () : seq<Currency> =
 #if STRICTER_COMPILATION_BUT_WITH_REFLECTION_AT_RUNTIME
-        FSharpUtil.GetAllElementsFromDiscriminatedUnion<Currency>()
+        FSharpUtil.GetAllElementsFromDiscriminatedUnion<Currency> ()
 #else
         seq {
             yield BTC
@@ -37,29 +37,35 @@ type Currency =
         }
 #endif
 
-    static member Parse(currencyString: string): Currency =
-        Currency.GetAll().First(fun currency -> currencyString = currency.ToString())
+    static member Parse (currencyString: string) : Currency =
+        Currency
+            .GetAll()
+            .First (fun currency -> currencyString = currency.ToString ())
 
-    member self.IsEther() =
+    member self.IsEther () =
         self = Currency.ETC || self = Currency.ETH
-    member self.IsEthToken() =
+
+    member self.IsEthToken () =
         self = Currency.DAI || self = Currency.SAI
-    member self.IsEtherBased() =
-        self.IsEther() || self.IsEthToken()
-    member self.IsUtxo() =
+
+    member self.IsEtherBased () =
+        self.IsEther () || self.IsEthToken ()
+
+    member self.IsUtxo () =
         self = Currency.BTC || self = Currency.LTC
 
-    member self.DecimalPlaces(): int =
-        if self.IsUtxo() then
+    member self.DecimalPlaces () : int =
+        if self.IsUtxo () then
             8
-        elif self.IsEther() then
+        elif self.IsEther () then
             18
         elif self = Currency.SAI then
             18
         else
-            failwith <| SPrintF1 "Unable to determine decimal places for %A" self
+            failwith
+            <| SPrintF1 "Unable to determine decimal places for %A" self
 
-    override self.ToString() =
+    override self.ToString () =
 #if STRICTER_COMPILATION_BUT_WITH_REFLECTION_AT_RUNTIME
         SPrintF1 "%A" self
 #else
@@ -76,12 +82,18 @@ type Currency =
 
 // the reason we have used "and" is because of the circular reference
 // between StringTypeConverter and Currency
-and private StringTypeConverter() =
-    inherit TypeConverter()
-    override __.CanConvertFrom(context, sourceType) =
-        sourceType = typeof<string> || base.CanConvertFrom(context, sourceType)
-    override __.ConvertFrom(context, culture, value) =
+and private StringTypeConverter () =
+    inherit TypeConverter ()
+
+    override __.CanConvertFrom (context, sourceType) =
+        sourceType = typeof<string> || base.CanConvertFrom (context, sourceType)
+
+    override __.ConvertFrom (context, culture, value) =
         match value with
         | :? string as stringValue ->
-            Seq.find (fun cur -> cur.ToString() = stringValue) (Currency.GetAll()) :> obj
-        | _ -> base.ConvertFrom(context, culture, value)
+            Seq.find
+                (fun cur -> cur.ToString () = stringValue
+                )
+                (Currency.GetAll ())
+            :> obj
+        | _ -> base.ConvertFrom (context, culture, value)
