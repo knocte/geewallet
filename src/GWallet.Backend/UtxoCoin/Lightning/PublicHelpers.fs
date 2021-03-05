@@ -4,6 +4,8 @@
 // reference DotNetLightning or NBitcoin directly, so: TODO: report this bug against the F# compiler
 // (related: https://stackoverflow.com/questions/62274013/fs0074-the-type-referenced-through-c-crecord-is-defined-in-an-assembly-that-i)
 
+open System
+
 open GWallet.Backend
 
 module public ChannelId =
@@ -20,10 +22,18 @@ module public PubKey =
 // FIXME: find a better name? as it clashes with NBitcoin's Network
 module public Network =
     let public OpenChannel (nodeClient: NodeClient) = nodeClient.OpenChannel
+    let public CloseChannel (nodeClient: NodeClient) = nodeClient.InitiateCloseChannel
+
+    let public AcceptCloseChannel (_nodeServer: NodeServer) =
+        raise <| NotImplementedException ()
+    let public CheckClosingFinished (_channel: ChannelInfo): Async<bool> =
+        raise <| NotImplementedException ()
+
     let public SendMonoHopPayment (nodeClient: NodeClient) = nodeClient.SendMonoHopPayment
     let public ConnectLockChannelFunding (nodeClient: NodeClient) = nodeClient.ConnectLockChannelFunding
 
     let public AcceptChannel (nodeServer: NodeServer) = nodeServer.AcceptChannel ()
     let public ReceiveMonoHopPayment (nodeServer: NodeServer) = nodeServer.ReceiveMonoHopPayment
     let public AcceptLockChannelFunding (nodeServer: NodeServer) = nodeServer.AcceptLockChannelFunding
+
     let public EndPoint (nodeServer: NodeServer) = nodeServer.EndPoint

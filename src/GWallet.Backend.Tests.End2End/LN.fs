@@ -7,6 +7,7 @@ open System.Threading
 
 open NBitcoin
 open DotNetLightning.Utils
+open ResultUtils.Portability
 
 open GWallet.Backend
 open GWallet.Backend.UtxoCoin
@@ -22,6 +23,7 @@ type LN() =
     let walletToWalletTestPayment1Amount = Money (0.015m, MoneyUnit.BTC)
 
     [<Category "G2GChannelOpeningFunder">]
+    [<Ignore "channel closing not implemented yet">]
     [<Test>]
     member __.``can open channel with geewallet (funder)``() = Async.RunSynchronously <| async {
         use! walletInstance = WalletInstance.New None None
@@ -31,12 +33,43 @@ type LN() =
 
         do! walletInstance.FundByMining bitcoind lnd
 
-        let! _channelId,_fundingAmount = walletInstance.OpenChannelWithFundee bitcoind Config.FundeeNodeEndpoint
+        let! channelId,_fundingAmount = walletInstance.OpenChannelWithFundee bitcoind Config.FundeeNodeEndpoint
+
+        let! closeChannelRes = Lightning.Network.CloseChannel walletInstance.NodeServer.NodeClient channelId
+        match closeChannelRes with
+        | Ok _ -> ()
+        | Error err -> failwith (SPrintF1 "error when closing channel: %s" err.Message)
+
+        match (walletInstance.ChannelStore.ChannelInfo channelId).Status with
+        | ChannelStatus.Closing -> ()
+        | status -> failwith (SPrintF1 "unexpected channel status. Expected Closing, got %A" status)
+
+        // Mine 10 blocks to make sure closing tx is confirmed
+        bitcoind.GenerateBlocks (BlockHeightOffset32 (uint32 10)) walletInstance.Address
+
+        let rec waitForClosingTxConfirmed attempt = async {
+            Infrastructure.LogDebug (SPrintF1 "Checking if closing tx is finished, attempt #%d" attempt)
+            if attempt = 10 then
+                return Error "Closing tx not confirmed after maximum attempts"
+            else
+                let! txIsConfirmed = Lightning.Network.CheckClosingFinished (walletInstance.ChannelStore.ChannelInfo channelId)
+                if txIsConfirmed then
+                    return Ok ()
+                else
+                    do! Async.Sleep 1000
+                    return! waitForClosingTxConfirmed (attempt + 1)
+        }
+
+        let! closingTxConfirmedRes = waitForClosingTxConfirmed 0
+        match closingTxConfirmedRes with
+        | Ok _ -> ()
+        | Error err -> failwith (SPrintF1 "error when waiting for closing tx to confirm: %s" err)
 
         return ()
     }
 
     [<Category "G2GChannelOpeningFundee">]
+    [<Ignore "channel closing not implemented yet">]
     [<Test>]
     member __.``can open channel with geewallet (fundee)``() = Async.RunSynchronously <| async {
         use! walletInstance = WalletInstance.New (Some Config.FundeeLightningIPEndpoint) (Some Config.FundeeAccountsPrivateKey)
@@ -53,6 +86,11 @@ type LN() =
         match channelInfo.Status with
         | ChannelStatus.Active -> ()
         | status -> failwith (SPrintF1 "unexpected channel status. Expected Active, got %A" status)
+
+        let! closeChannelRes = Lightning.Network.AcceptCloseChannel walletInstance.NodeServer channelId
+        match closeChannelRes with
+        | Ok _ -> ()
+        | Error err -> failwith (SPrintF1 "failed to accept close channel: %A" err)
 
         return ()
     }

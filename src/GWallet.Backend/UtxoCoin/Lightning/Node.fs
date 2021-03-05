@@ -180,6 +180,9 @@ type NodeClient internal (channelStore: ChannelStore, nodeMasterPrivKey: NodeMas
                 return Ok ()
     }
 
+    member internal self.InitiateCloseChannel (_channelId: ChannelIdentifier): Async<Result<unit, IErrorMsg>> =
+        raise <| NotImplementedException ()
+
     member internal self.ConnectLockChannelFunding (channelId: ChannelIdentifier)
                                                        : Async<Result<unit, IErrorMsg>> =
         async {
