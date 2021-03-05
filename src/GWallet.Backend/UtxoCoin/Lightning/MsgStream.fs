@@ -4,8 +4,8 @@ open System
 open System.Net
 
 open NBitcoin
-open DotNetLightning.Serialize.Msgs
-open DotNetLightning.Serialize
+open DotNetLightning.Serialization
+open DotNetLightning.Serialization.Msgs
 open DotNetLightning.Utils
 open ResultUtils.Portability
 
@@ -70,8 +70,8 @@ type internal MsgStream =
         member self.Dispose() =
             (self.TransportStream :> IDisposable).Dispose()
 
-    static member internal SupportedFeatures: FeatureBit =
-        let featureBits = FeatureBit.Zero
+    static member internal SupportedFeatures: FeatureBits =
+        let featureBits = FeatureBits.Zero
         featureBits.SetFeature Feature.OptionDataLossProtect FeaturesSupport.Optional true
         featureBits
 
@@ -101,13 +101,13 @@ type internal MsgStream =
                 | _ -> return Error <| UnexpectedMsg msg
     }
 
-    static member internal Connect (nodeSecret: ExtKey)
+    static member internal Connect (nodeMasterPrivKey: NodeMasterPrivKey)
                                    (peerNodeId: NodeId)
                                    (peerId: PeerId)
                                        : Async<Result<InitMsg * MsgStream, ConnectError>> = async {
         let! transportStreamRes =
             TransportStream.Connect
-                nodeSecret
+                nodeMasterPrivKey
                 peerNodeId
                 peerId
         match transportStreamRes with
@@ -162,8 +162,8 @@ type internal MsgStream =
     member internal self.NodeEndPoint: NodeEndPoint =
         self.TransportStream.NodeEndPoint
 
-    member internal self.NodeSecret =
-        self.TransportStream.NodeSecret
+    member internal self.NodeMasterPrivKey(): NodeMasterPrivKey =
+        self.TransportStream.NodeMasterPrivKey
 
     member internal self.SendMsg (msg: ILightningMsg): Async<MsgStream> = async {
         let bytes = msg.ToBytes()

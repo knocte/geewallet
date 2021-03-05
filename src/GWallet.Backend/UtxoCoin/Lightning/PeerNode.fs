@@ -4,8 +4,8 @@ open System
 open System.Net
 
 open NBitcoin
-open DotNetLightning.Serialize.Msgs
 open DotNetLightning.Utils
+open DotNetLightning.Serialization.Msgs
 open ResultUtils.Portability
 
 open GWallet.Backend
@@ -33,11 +33,11 @@ and internal PeerNode =
         member self.Dispose() =
             (self.MsgStream :> IDisposable).Dispose()
 
-    static member internal Connect (nodeSecret: ExtKey)
+    static member internal Connect (nodeMasterPrivKey: NodeMasterPrivKey)
                                    (peerNodeId: NodeId)
                                    (peerId: PeerId)
                                        : Async<Result<PeerNode, ConnectError>> = async {
-        let! connectRes = MsgStream.Connect nodeSecret peerNodeId peerId
+        let! connectRes = MsgStream.Connect nodeMasterPrivKey peerNodeId peerId
         match connectRes with
         | Error connectError -> return Error connectError
         | Ok (initMsg, msgStream) ->
@@ -102,8 +102,8 @@ and internal PeerNode =
     member internal self.NodeEndPoint: NodeEndPoint =
         self.MsgStream.NodeEndPoint
 
-    member internal self.NodeSecret: ExtKey =
-        self.MsgStream.NodeSecret
+    member internal self.NodeMasterPrivKey(): NodeMasterPrivKey =
+        self.MsgStream.NodeMasterPrivKey ()
 
     member internal self.SendMsg (msg: ILightningMsg): Async<PeerNode> = async {
         let! msgStream = self.MsgStream.SendMsg msg

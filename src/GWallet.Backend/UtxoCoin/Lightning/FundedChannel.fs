@@ -3,9 +3,9 @@ namespace GWallet.Backend.UtxoCoin.Lightning
 open System
 
 open NBitcoin
-open DotNetLightning.Serialize.Msgs
 open DotNetLightning.Channel
 open DotNetLightning.Utils
+open DotNetLightning.Serialization.Msgs
 open ResultUtils.Portability
 
 open GWallet.Backend
@@ -135,7 +135,6 @@ type internal FundedChannel =
     static member internal AcceptChannel (peerNode: PeerNode)
                                          (account: NormalUtxoAccount)
                                              : Async<Result<FundedChannel, AcceptChannelError>> = async {
-        let nodeSecret = peerNode.NodeSecret
         let channelIndex =
             let random = Org.BouncyCastle.Security.SecureRandom() :> Random
             random.Next(1, Int32.MaxValue / 2)
@@ -149,17 +148,18 @@ type internal FundedChannel =
         | Ok (peerNodeAfterOpenChannel, channelMsg) ->
             match channelMsg with
             | :? OpenChannelMsg as openChannelMsg ->
+                let nodeMasterPrivKey = peerNode.NodeMasterPrivKey ()
                 let! channel =
                     let fundingTxProvider (_: IDestination, _: Money, _: FeeRatePerKw) =
                         failwith "not funding channel, so unreachable"
                     MonoHopUnidirectionalChannel.Create
                         nodeId
                         account
-                        nodeSecret
+                        nodeMasterPrivKey
                         channelIndex
                         fundingTxProvider
                         WaitForInitInternal
-                let channelKeys = channel.ChannelKeys
+                let channelPrivKeys = channel.ChannelPrivKeys
                 let localParams =
                     let funding = openChannelMsg.FundingSatoshis
                     let defaultFinalScriptPubKey = ScriptManager.CreatePayoutScript account
@@ -171,7 +171,7 @@ type internal FundedChannel =
                             LocalParams = localParams
                             RemoteInit = peerNodeAfterOpenChannel.InitMsg
                             ToLocal = LNMoney 0L
-                            ChannelKeys = channelKeys
+                            ChannelPrivKeys = channelPrivKeys
                         }
                         ChannelCommand.CreateInbound inputInitFundee
                     channel.ExecuteCommand channelCmd <| function

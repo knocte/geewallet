@@ -94,8 +94,11 @@
 
     <!-- FIXME: we should not need to reference ResultUtils at all when we can upgrade to F#v4.5 across the board (all CI lanes) -->
     <Reference Include="ResultUtils">
-      <HintPath>..\..\packages\DotNetLightning.Kiss.1.1.2-date20210209-0415-git-1668246\lib\netstandard2.0\ResultUtils.dll</HintPath>
+      <HintPath>..\..\packages\DotNetLightning.Kiss.1.1.2-date20210412-1027-git-6062c26\lib\netstandard2.0\ResultUtils.dll</HintPath>
     </Reference>
 
+    <Reference Include="System.Runtime.CompilerServices.Unsafe">
+      <HintPath>..\..\packages\System.Runtime.CompilerServices.Unsafe.4.5.3\lib\net461\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
+    </Reference>
   </ItemGroup>
 </Project>
