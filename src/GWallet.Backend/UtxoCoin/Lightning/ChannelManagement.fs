@@ -32,6 +32,7 @@ type FundingBroadcastButNotLockedData =
 
 type ChannelStatus =
     | FundingBroadcastButNotLocked of FundingBroadcastButNotLockedData
+    | Closing
     | Active
     | Broken
 
