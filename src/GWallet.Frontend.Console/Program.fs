@@ -224,7 +224,8 @@ let GetChannelStatuses (accounts: seq<IAccount>): seq<Async<Async<seq<string>>>>
                             }
                         }
                     }
-
+                | ChannelStatus.Closing ->
+                    raise <| NotImplementedException ()
 }
 
 let rec TrySendAmount (account: NormalAccount) transactionMetadata destination amount =
