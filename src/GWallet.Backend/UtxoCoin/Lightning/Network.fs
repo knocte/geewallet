@@ -170,22 +170,41 @@ type internal TransportStream =
                                          (numberBytesToRead: int)
                                              : Async<Result<array<byte>, PeerDisconnectedError>> =
         let buf: array<byte> = Array.zeroCreate numberBytesToRead
-        let rec read buf totalBytesRead = async {
-            let! bytesRead =
-                stream.ReadAsync(buf, totalBytesRead, (numberBytesToRead - totalBytesRead))
-                |> Async.AwaitTask
-            let totalBytesRead = totalBytesRead + bytesRead
-            if bytesRead = 0 then
-                if totalBytesRead = 0 then
-                    return Error { Abruptly = false }
-                else
-                    return Error { Abruptly = true }
-            else
-                if totalBytesRead < numberBytesToRead then
-                    return! read buf totalBytesRead
-                else
-                    return Ok buf
-        }
+        let rec read buf totalBytesRead =
+            let readAsync () =
+                async {
+                    let task = (stream.ReadAsync(buf, totalBytesRead, (numberBytesToRead - totalBytesRead)))
+                    return! Async.AwaitTask task
+                }
+            async {
+                let! maybeBytesRead =
+                    async {
+                        try
+                            let! res = readAsync ()
+                            return Some res
+                        with
+                        | ex ->
+                            if (FSharpUtil.FindException<System.Net.Sockets.SocketException> ex).IsSome then
+                                return None
+                            else
+                                return raise <| FSharpUtil.ReRaise ex
+                    }
+
+                match maybeBytesRead with
+                | Some bytesRead ->
+                    let totalBytesRead = totalBytesRead + bytesRead
+                    if bytesRead = 0 then
+                        if totalBytesRead = 0 then
+                            return Error { Abruptly = false }
+                        else
+                            return Error { Abruptly = true }
+                    else
+                        if totalBytesRead < numberBytesToRead then
+                            return! read buf totalBytesRead
+                        else
+                            return Ok buf
+                | None -> return Error { Abruptly = true }
+            }
         read buf 0
 
     static member private TcpConnect (localEndPointOpt: Option<IPEndPoint>)
