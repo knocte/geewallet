@@ -568,12 +568,12 @@ type ChannelMarshalling () =
         let serializedChannel = 
             Marshalling.DeserializeCustom<SerializedChannel> (
                 serializedChannelJson,
-                SerializedChannel.LightningSerializerSettings
+                SerializedChannel.LightningSerializerSettings Currency.BTC
             )
         let reserializedChannelJson =
             Marshalling.SerializeCustom (
                 serializedChannel,
-                SerializedChannel.LightningSerializerSettings,
+                SerializedChannel.LightningSerializerSettings Currency.BTC,
                 Marshalling.DefaultFormatting
             )
         Assert.That(reserializedChannelJson |> MarshallingData.Sanitize,

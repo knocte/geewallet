@@ -33,6 +33,7 @@ type FundingBroadcastButNotLockedData =
 type ChannelStatus =
     | FundingBroadcastButNotLocked of FundingBroadcastButNotLockedData
     | Closing
+    | Closed
     | Active
     | Broken
 
@@ -63,6 +64,11 @@ type ChannelInfo =
         Currency = currency
         Status =
             match serializedChannel.ChanState with
+            | ChannelState.Negotiating _
+            | ChannelState.Closing _ ->
+                Closing
+            | ChannelState.Closed _ ->
+                Closed
             | ChannelState.Normal _ -> ChannelStatus.Active
             | ChannelState.WaitForFundingConfirmed waitForFundingConfirmedData ->
                 let txId = TransactionIdentifier.FromHash waitForFundingConfirmedData.Commitments.FundingScriptCoin.Outpoint.Hash
@@ -123,7 +129,7 @@ type ChannelStore(account: NormalUtxoAccount) =
         let json = File.ReadAllText fileName
         Marshalling.DeserializeCustom<SerializedChannel> (
             json,
-            SerializedChannel.LightningSerializerSettings
+            SerializedChannel.LightningSerializerSettings self.Currency
         )
 
     member internal self.SaveChannel (serializedChannel: SerializedChannel) =
@@ -131,7 +137,7 @@ type ChannelStore(account: NormalUtxoAccount) =
         let json =
             Marshalling.SerializeCustom (
                 serializedChannel,
-                SerializedChannel.LightningSerializerSettings,
+                SerializedChannel.LightningSerializerSettings self.Currency,
                 Marshalling.DefaultFormatting
             )
         if not self.ChannelDir.Exists then
@@ -144,7 +150,10 @@ type ChannelStore(account: NormalUtxoAccount) =
 
     member self.ListChannelInfos(): seq<ChannelInfo> = seq {
         for channelId in self.ListChannelIds() do
-            yield self.ChannelInfo channelId
+            let channelInfo = self.ChannelInfo channelId
+            if channelInfo.Status <> ChannelStatus.Closing &&
+               channelInfo.Status <> ChannelStatus.Closed then
+                yield channelInfo
     }
 
 

@@ -10,6 +10,7 @@ open DotNetLightning.Utils
 open DotNetLightning.Crypto
 open DotNetLightning.Transactions
 
+open GWallet.Backend.UtxoCoin
 open GWallet.Backend.FSharpUtil
 
 type SerializedCommitmentSpec =
@@ -91,10 +92,15 @@ type SerializedChannel =
         // this is the amount of confirmations that the counterparty told us that the funding transaction needs
         MinSafeDepth: BlockHeightOffset32
     }
-    static member LightningSerializerSettings: JsonSerializerSettings =
+    static member LightningSerializerSettings currency: JsonSerializerSettings =
         let settings = JsonMarshalling.SerializerSettings
+
         let commitmentsConverter = CommitmentsJsonConverter()
         settings.Converters.Add commitmentsConverter
+
+        let psbtConverter = NBitcoin.JsonConverters.PSBTJsonConverter (Account.GetNetwork currency)
+        settings.Converters.Add psbtConverter
+
         settings
 
     member internal self.Commitments: Commitments =
