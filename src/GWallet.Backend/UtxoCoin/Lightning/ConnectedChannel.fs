@@ -218,7 +218,7 @@ type internal ConnectedChannel =
             RemoteNodeId = self.PeerNode.RemoteNodeId
             ChanState = self.Channel.Channel.State
             AccountFileName = self.Account.AccountFile.Name
-            CounterpartyIP = self.PeerNode.RemoteEndPoint
+            CounterpartyIP = self.PeerNode.PeerId.Value :?> IPEndPoint
             MinSafeDepth = self.MinimumDepth
         }
         channelStore.SaveChannel serializedChannel

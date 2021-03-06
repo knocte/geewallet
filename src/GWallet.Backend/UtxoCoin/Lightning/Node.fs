@@ -59,6 +59,18 @@ type internal NodeReceiveMonoHopPaymentError =
                 SPrintF1 "error receiving payment on reconnected channel: %s"
                          (recvMonoHopPaymentError :> IErrorMsg).Message
 
+type internal NodeAcceptCloseChannelError =
+    | Reconnect of ReconnectActiveChannelError
+    | AcceptCloseChannel of CloseChannelError
+    interface IErrorMsg with
+        member self.Message =
+            match self with
+            | Reconnect reconnectActiveChannelError ->
+                SPrintF1 "error reconnecting channel: %s" (reconnectActiveChannelError :> IErrorMsg).Message
+            | AcceptCloseChannel acceptCloseChannelError ->
+                SPrintF1 "error accepting channel close on reconnected channel: %s"
+                         (acceptCloseChannelError :> IErrorMsg).Message
+
 type IChannelToBeOpened =
     abstract member ConfirmationsRequired: uint32 with get
     abstract member ChannelId: ChannelIdentifier with get
@@ -180,8 +192,21 @@ type NodeClient internal (channelStore: ChannelStore, nodeMasterPrivKey: NodeMas
                 return Ok ()
     }
 
-    member internal self.InitiateCloseChannel (_channelId: ChannelIdentifier): Async<Result<unit, IErrorMsg>> =
-        raise <| NotImplementedException ()
+    member internal self.InitiateCloseChannel (channelId: ChannelIdentifier): Async<Result<unit, IErrorMsg>> =
+        async {
+            let! connectRes =
+                ActiveChannel.ConnectReestablish self.ChannelStore self.NodeMasterPrivKey channelId
+            match connectRes with
+            | Error connectError ->
+                return failwith <| SPrintF1 "Error reestablishing channel: %s" (connectError :> IErrorMsg).Message
+            | Ok activeChannel ->
+                let! closeRes = ClosedChannel.InitiateCloseChannel activeChannel.ConnectedChannel
+                match closeRes with
+                | Error closeError ->
+                    return failwith <| SPrintF1 "Error closing channel: %s" (closeError :> IErrorMsg).Message
+                | Ok _ ->
+                    return Ok ()
+        }
 
     member internal self.ConnectLockChannelFunding (channelId: ChannelIdentifier)
                                                        : Async<Result<unit, IErrorMsg>> =
@@ -268,21 +293,97 @@ type NodeServer internal (nodeClient: NodeClient, transportListener: TransportLi
                 |> ignore<bool>
             return Error <| (NodeReceiveMonoHopPaymentError.Reconnect reconnectActiveChannelError :> IErrorMsg)
         | Ok activeChannel ->
-            let! paymentRes = activeChannel.RecvMonoHopUnidirectionalPayment()
-            match paymentRes with
-            | Error recvMonoHopPaymentError ->
-                if recvMonoHopPaymentError.PossibleBug then
-                    let msg =
-                        SPrintF2
-                            "error accepting monohop payment on channel %s: %s"
-                            (channelId.ToString())
-                            (recvMonoHopPaymentError :> IErrorMsg).Message
-                    Infrastructure.ReportWarningMessage msg
-                    |> ignore<bool>
-                return Error <| (NodeReceiveMonoHopPaymentError.ReceivePayment recvMonoHopPaymentError :> IErrorMsg)
-            | Ok activeChannelAfterPaymentReceived ->
-                (activeChannelAfterPaymentReceived :> IDisposable).Dispose()
-                return Ok ()
+            let connectedChannel = activeChannel.ConnectedChannel
+            Infrastructure.LogDebug "Waiting for lightning message"
+            let! recvChannelMsgRes = connectedChannel.PeerNode.RecvChannelMsg()
+            match recvChannelMsgRes with
+            | Error err ->
+                return failwith <| SPrintF1 "Received error while waiting for lightning message: %s" (err :> IErrorMsg).Message
+            | Ok (peerNodeAfterMsgReceived, channelMsg) ->
+                match channelMsg with
+                | :? DotNetLightning.Serialization.Msgs.MonoHopUnidirectionalPaymentMsg as monoHopUnidirectionalPaymentMsg ->
+                    let activeChannelAfterMsgReceived =
+                        { activeChannel with
+                            ConnectedChannel =
+                                { activeChannel.ConnectedChannel
+                                    with PeerNode = peerNodeAfterMsgReceived }}
+
+                    return! self.HandleMonoHopUnidirectionalPaymentMsg activeChannelAfterMsgReceived channelId monoHopUnidirectionalPaymentMsg
+
+                | msg ->
+                    return failwith <| SPrintF1 "Unexpected msg while waiting for monohop payment message: %As" msg
+    }
+
+    member private self.HandleMonoHopUnidirectionalPaymentMsg (activeChannel: ActiveChannel)
+        (channelId: ChannelIdentifier)
+        (monoHopUnidirectionalPaymentMsg: DotNetLightning.Serialization.Msgs.MonoHopUnidirectionalPaymentMsg)
+        : Async<Result<unit, IErrorMsg>> =
+            async {
+                let! paymentRes = activeChannel.RecvMonoHopUnidirectionalPayment monoHopUnidirectionalPaymentMsg
+                match paymentRes with
+                | Error recvMonoHopPaymentError ->
+                    if recvMonoHopPaymentError.PossibleBug then
+                        let msg =
+                            SPrintF2
+                                "error accepting monohop payment on channel %s: %s"
+                                (channelId.ToString())
+                                (recvMonoHopPaymentError :> IErrorMsg).Message
+                        Infrastructure.ReportWarningMessage msg
+                        |> ignore<bool>
+                    return Error <| (NodeReceiveMonoHopPaymentError.ReceivePayment recvMonoHopPaymentError :> IErrorMsg)
+                | Ok activeChannelAfterPaymentReceived ->
+                    (activeChannelAfterPaymentReceived :> IDisposable).Dispose()
+                    return Ok ()
+            }
+
+    member internal self.AcceptCloseChannel (channelId: ChannelIdentifier)
+                                                : Async<Result<unit, IErrorMsg>> = async {
+        let! activeChannelRes = ActiveChannel.AcceptReestablish self.ChannelStore self.TransportListener channelId
+        match activeChannelRes with
+        | Error reconnectActiveChannelError ->
+            if reconnectActiveChannelError.PossibleBug then
+                let msg =
+                    SPrintF2
+                        "error accepting connection from peer to accept close channel on channel %s: %s"
+                        (channelId.ToString())
+                        (reconnectActiveChannelError :> IErrorMsg).Message
+                Infrastructure.ReportWarningMessage msg
+                |> ignore<bool>
+            return Error <| (NodeAcceptCloseChannelError.Reconnect reconnectActiveChannelError :> IErrorMsg)
+        | Ok activeChannel ->
+            let connectedChannel = activeChannel.ConnectedChannel
+
+            Infrastructure.LogDebug "Waiting for lightning message"
+            let! recvChannelMsgRes = connectedChannel.PeerNode.RecvChannelMsg()
+            match recvChannelMsgRes with
+            | Error err ->
+                return failwith <| SPrintF1 "Received error while waiting for lightning message: %s" (err :> IErrorMsg).Message
+            | Ok (peerNodeAfterMsgReceived, channelMsg) ->
+                match channelMsg with
+                | :? DotNetLightning.Serialization.Msgs.ShutdownMsg as shutdownMsg ->
+                    let activeChannelAfterMsgReceived =
+                        { activeChannel with
+                            ConnectedChannel =
+                                { activeChannel.ConnectedChannel with
+                                    PeerNode = peerNodeAfterMsgReceived
+                                }
+                        }
+
+                    return! self.HandleShutdownMsg activeChannelAfterMsgReceived shutdownMsg
+
+                | msg ->
+                    return failwith <| SPrintF1 "Unexpected msg while waiting for shutdown message: %As" msg
+    }
+
+    member private self.HandleShutdownMsg (activeChannel: ActiveChannel)
+                                          (shutdownMsg: DotNetLightning.Serialization.Msgs.ShutdownMsg)
+                                              : Async<Result<unit, IErrorMsg>> = async {
+        let! closeRes = ClosedChannel.AcceptCloseChannel (activeChannel.ConnectedChannel, shutdownMsg)
+        match closeRes with
+        | Error acceptCloseChannelError ->
+            return Error <| (NodeAcceptCloseChannelError.AcceptCloseChannel acceptCloseChannelError :> IErrorMsg)
+        | Ok _ ->
+            return Ok ()
     }
 
     member internal self.AcceptLockChannelFunding (channelId: ChannelIdentifier)

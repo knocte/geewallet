@@ -23,7 +23,6 @@ type LN() =
     let walletToWalletTestPayment1Amount = Money (0.015m, MoneyUnit.BTC)
 
     [<Category "G2GChannelOpeningFunder">]
-    [<Ignore "channel closing not implemented yet">]
     [<Test>]
     member __.``can open channel with geewallet (funder)``() = Async.RunSynchronously <| async {
         use! walletInstance = WalletInstance.New None None
@@ -69,7 +68,6 @@ type LN() =
     }
 
     [<Category "G2GChannelOpeningFundee">]
-    [<Ignore "channel closing not implemented yet">]
     [<Test>]
     member __.``can open channel with geewallet (fundee)``() = Async.RunSynchronously <| async {
         use! walletInstance = WalletInstance.New (Some Config.FundeeLightningIPEndpoint) (Some Config.FundeeAccountsPrivateKey)

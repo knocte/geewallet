@@ -6,7 +6,11 @@
 
 open System
 
+open ResultUtils.Portability
+
 open GWallet.Backend
+open GWallet.Backend.FSharpUtil
+open GWallet.Backend.FSharpUtil.UwpHacks
 
 module public ChannelId =
     let ToString (channelId: ChannelIdentifier): string =
@@ -24,10 +28,16 @@ module public Network =
     let public OpenChannel (nodeClient: NodeClient) = nodeClient.OpenChannel
     let public CloseChannel (nodeClient: NodeClient) = nodeClient.InitiateCloseChannel
 
-    let public AcceptCloseChannel (_nodeServer: NodeServer) =
-        raise <| NotImplementedException ()
-    let public CheckClosingFinished (_channel: ChannelInfo): Async<bool> =
-        raise <| NotImplementedException ()
+    let public AcceptCloseChannel (nodeServer: NodeServer) = nodeServer.AcceptCloseChannel
+    let public CheckClosingFinished (channel: ChannelInfo): Async<bool> =
+        async {
+            let! resCheck = ClosedChannel.CheckClosingFinished channel.FundingTxId.DnlTxId
+            match resCheck with
+            | Ok res ->
+                return res
+            | Error err ->
+                return failwith <| SPrintF1 "Error when checking if channel finished closing: %s" (err :> IErrorMsg).Message
+        }
 
     let public SendMonoHopPayment (nodeClient: NodeClient) = nodeClient.SendMonoHopPayment
     let public ConnectLockChannelFunding (nodeClient: NodeClient) = nodeClient.ConnectLockChannelFunding

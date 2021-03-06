@@ -202,11 +202,12 @@ let GetChannelStatuses (accounts: seq<IAccount>): seq<Async<Async<seq<string>>>>
         }
         for channelId in channelIds do
             let channelInfo = channelStore.ChannelInfo channelId
-            yield
-                match channelInfo.Status with
-                | ChannelStatus.FundingBroadcastButNotLocked fundingBroadcastButNotLockedData ->
+            match channelInfo.Status with
+            | ChannelStatus.FundingBroadcastButNotLocked fundingBroadcastButNotLockedData ->
+                yield
                     LockChannelIfFundingConfirmed channelStore channelInfo fundingBroadcastButNotLockedData
-                | ChannelStatus.Active ->
+            | ChannelStatus.Active ->
+                yield
                     async {
                         return async {
                             return seq {
@@ -215,7 +216,8 @@ let GetChannelStatuses (accounts: seq<IAccount>): seq<Async<Async<seq<string>>>>
                             }
                         }
                     }
-                | ChannelStatus.Broken ->
+            | ChannelStatus.Broken ->
+                yield
                     async {
                         return async {
                             return seq {
@@ -224,8 +226,24 @@ let GetChannelStatuses (accounts: seq<IAccount>): seq<Async<Async<seq<string>>>>
                             }
                         }
                     }
-                | ChannelStatus.Closing ->
-                    raise <| NotImplementedException ()
+            | ChannelStatus.Closing ->
+                yield
+                    async {
+                        return async {
+                            let! isClosed = UtxoCoin.Lightning.Network.CheckClosingFinished channelInfo
+                            let showTheChannel = not isClosed
+                            if showTheChannel then
+                                return seq {
+                                    yield! UserInteraction.DisplayLightningChannelStatus channelInfo
+                                    yield "        channel is in being closed"
+                                }
+                            else
+                                return Seq.empty
+                        }
+                    }
+            | ChannelStatus.Closed ->
+                ()
+
 }
 
 let rec TrySendAmount (account: NormalAccount) transactionMetadata destination amount =

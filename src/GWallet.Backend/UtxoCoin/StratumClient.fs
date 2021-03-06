@@ -76,16 +76,17 @@ type BlockchainTransactionGetResult =
         Result: string;
     }
 
-type VerboseResult =
+type BlockchainTransactionGetVerboseInnerResult =
     {
         Locktime: uint32
         Confirmations: uint32
+        Hex: string
     }
 
 type BlockchainTransactionGetVerboseResult =
     {
         Id: int
-        Result: VerboseResult
+        Result: BlockchainTransactionGetVerboseInnerResult
     }
 
 type BlockchainEstimateFeeResult =
