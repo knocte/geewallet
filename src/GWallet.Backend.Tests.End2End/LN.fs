@@ -1,10 +1,8 @@
 namespace GWallet.Backend.Tests.End2End
 
-open NUnit.Framework
-
-open System.Net
 open System.Threading
 
+open NUnit.Framework
 open NBitcoin
 open DotNetLightning.Utils
 open ResultUtils.Portability
@@ -25,6 +23,40 @@ type LN() =
     [<Category "G2GChannelOpeningFunder">]
     [<Test>]
     member __.``can open channel with geewallet (funder)``() = Async.RunSynchronously <| async {
+        use! walletInstance = WalletInstance.New None None
+        use bitcoind = Bitcoind.Start()
+        use _electrumServer = ElectrumServer.Start bitcoind
+        use! lnd = Lnd.Start bitcoind
+
+        do! walletInstance.FundByMining bitcoind lnd
+
+        let! _channelId,_fundingAmount = walletInstance.OpenChannelWithFundee bitcoind Config.FundeeNodeEndpoint
+
+        return ()
+    }
+
+    [<Category "G2GChannelOpeningFundee">]
+    [<Test>]
+    member __.``can open channel with geewallet (fundee)``() = Async.RunSynchronously <| async {
+        use! walletInstance = WalletInstance.New (Some Config.FundeeLightningIPEndpoint) (Some Config.FundeeAccountsPrivateKey)
+        let! pendingChannelRes =
+            Lightning.Network.AcceptChannel
+                walletInstance.NodeServer
+
+        let (channelId, _) = UnwrapResult pendingChannelRes "OpenChannel failed"
+
+        let! lockFundingRes = Lightning.Network.AcceptLockChannelFunding walletInstance.NodeServer channelId
+        UnwrapResult lockFundingRes "LockChannelFunding failed"
+
+        let channelInfo = walletInstance.ChannelStore.ChannelInfo channelId
+        match channelInfo.Status with
+        | ChannelStatus.Active -> ()
+        | status -> failwith (SPrintF1 "unexpected channel status. Expected Active, got %A" status)
+    }
+
+    [<Category "G2GChannelClosingFunder">]
+    [<Test>]
+    member __.``can close channel with geewallet (funder)``() = Async.RunSynchronously <| async {
         use! walletInstance = WalletInstance.New None None
         use bitcoind = Bitcoind.Start()
         use _electrumServer = ElectrumServer.Start bitcoind
@@ -67,9 +99,9 @@ type LN() =
         return ()
     }
 
-    [<Category "G2GChannelOpeningFundee">]
+    [<Category "G2GChannelClosingFundee">]
     [<Test>]
-    member __.``can open channel with geewallet (fundee)``() = Async.RunSynchronously <| async {
+    member __.``can close channel with geewallet (fundee)``() = Async.RunSynchronously <| async {
         use! walletInstance = WalletInstance.New (Some Config.FundeeLightningIPEndpoint) (Some Config.FundeeAccountsPrivateKey)
         let! pendingChannelRes =
             Lightning.Network.AcceptChannel
