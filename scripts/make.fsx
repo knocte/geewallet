@@ -252,17 +252,24 @@ let RunTests (suite: string) =
 
     let twoProcessTestNames =
         [
-            "G2GChannelOpening"
-            "G2GMonoHopUnidirectionalPayments"
-            "G2GChannelClosing"
+            "ChannelOpening"
+            "MonoHopUnidirectionalPayments"
+            "ChannelClosingAfterJustOpening"
+            "ChannelClosingAfterSendingMonoHopPayments"
         ]
+
+    let geewallet2geewalletTestNamePrefix, funderSuffix, fundeeSuffix = "G2G_", "_Funder", "_Fundee"
 
     let runTwoProcessTest testAssembly testName =
         let funderRunnerCommand =
-            nunitCommandFor testAssembly (Some [ ("include", testName + "Funder") ])
+            nunitCommandFor testAssembly (
+                Some [("include", geewallet2geewalletTestNamePrefix + testName + funderSuffix)]
+            )
 
         let fundeeRunnerCommand =
-            nunitCommandFor testAssembly (Some [ ("include", testName + "Fundee") ])
+            nunitCommandFor testAssembly (
+                Some [("include", geewallet2geewalletTestNamePrefix + testName + fundeeSuffix)]
+            )
 
         let funderRun = async {
             let res = Process.Execute(funderRunnerCommand, Echo.All)
@@ -300,7 +307,14 @@ let RunTests (suite: string) =
     let allTwoProcessTestNamesToExclude =
         twoProcessTestNames
         |> Seq.ofList
-        |> Seq.map (fun testName -> [ testName + "Funder"; testName + "Fundee" ])
+        |> Seq.map
+            (
+                fun testName ->
+                    [
+                        geewallet2geewalletTestNamePrefix + testName + funderSuffix
+                        geewallet2geewalletTestNamePrefix + testName + fundeeSuffix
+                    ]
+            )
         |> Seq.concat
         |> String.concat ","
 
