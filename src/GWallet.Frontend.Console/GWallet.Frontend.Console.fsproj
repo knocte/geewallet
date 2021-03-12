@@ -66,6 +66,7 @@
     </Compile>
     <Compile Include="Presentation.fs" />
     <Compile Include="UserInteraction.fs" />
+    <Compile Include="LayerTwo.fs" />
     <Compile Include="Program.fs" />
     <Content Include="packages.config" />
     <Content Include="gwallet.bat">
