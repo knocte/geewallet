@@ -241,7 +241,7 @@ module LayerTwo =
                     UserInteraction.PressAnyKeyToContinue()
         }
 
-    let ReceivePayment(): Async<unit> =
+    let ReceiveLightningEvent(): Async<unit> =
         async {
             let account = AskLightningAccount ()
             let channelStore = ChannelStore account
@@ -253,13 +253,16 @@ module LayerTwo =
                 let password = UserInteraction.AskPassword false
                 use nodeServer = Lightning.Connection.StartServer channelStore password bindAddress
 
-                let! receivePaymentRes =
-                    Lightning.Network.ReceiveMonoHopPayment nodeServer channelId
-                match receivePaymentRes with
-                | Error nodeReceiveMonoHopPaymentError ->
-                    Console.WriteLine(sprintf "Error receiving monohop payment: %s" nodeReceiveMonoHopPaymentError.Message)
-                | Ok () ->
-                    Console.WriteLine "Payment received."
+                let! receiveLightningEventRes = Lightning.Network.ReceiveLightningEvent nodeServer channelId
+                match receiveLightningEventRes with
+                | Error nodeReceiveLightningEventError ->
+                    Console.WriteLine(sprintf "Error receiving lightning event: %s" nodeReceiveLightningEventError.Message)
+                | Ok msg ->
+                    match msg with
+                    | IncomingChannelEvent.MonoHopUnidirectionalPayment ->
+                        Console.WriteLine "Payment received."
+                    | IncomingChannelEvent.Shutdown ->
+                        Console.WriteLine "Channel closed."
                 UserInteraction.PressAnyKeyToContinue()
         }
 
