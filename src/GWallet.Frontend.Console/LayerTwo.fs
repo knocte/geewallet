@@ -81,13 +81,17 @@ module LayerTwo =
         IPEndPoint(ipAddress, int port)
 
     let rec AskChannelId (channelStore: ChannelStore)
-                         (isFunder: bool)
+                         (isFunderOpt: Option<bool>)
                              : Option<ChannelIdentifier> =
         let channelIds = seq {
             for channelId in channelStore.ListChannelIds() do
                 let channelInfo = channelStore.ChannelInfo channelId
-                if channelInfo.IsFunder = isFunder then
+                match isFunderOpt with
+                | None ->
                     yield channelId
+                | Some isFunder ->
+                    if channelInfo.IsFunder = isFunder then
+                        yield channelId
         }
 
         Console.WriteLine "Available channels:"
@@ -107,7 +111,7 @@ module LayerTwo =
                 Some (channelIds.ElementAt index)
             | _ ->
                 Console.WriteLine "Invalid option"
-                AskChannelId channelStore isFunder
+                AskChannelId channelStore isFunderOpt
 
     let OpenChannel(): Async<unit> =
         async {
@@ -172,6 +176,27 @@ module LayerTwo =
                     UserInteraction.PressAnyKeyToContinue()
         }
 
+    let CloseChannel(): Async<unit> =
+        async {
+            let account = AskLightningAccount()
+            let channelStore = ChannelStore account
+            let channelIdOpt = AskChannelId channelStore None
+            match channelIdOpt with
+            | None -> return ()
+            | Some channelId ->
+                let password = UserInteraction.AskPassword false
+                let nodeClient = Lightning.Connection.StartClient channelStore password
+                let! closeRes = Lightning.Network.CloseChannel nodeClient channelId
+                match closeRes with
+                | Error closeError ->
+                    return failwithf "Error closing channel: %s" closeError.Message
+                | Ok () ->
+                    Console.WriteLine "Channel closed."
+                UserInteraction.PressAnyKeyToContinue()
+                return ()
+        }
+
+
     let AcceptChannel(): Async<unit> =
         async {
             let account = AskLightningAccount ()
@@ -196,7 +221,7 @@ module LayerTwo =
         async {
             let account = AskLightningAccount ()
             let channelStore = ChannelStore account
-            let channelIdOpt = AskChannelId channelStore true
+            let channelIdOpt = AskChannelId channelStore (Some true)
             match channelIdOpt with
             | None -> return ()
             | Some channelId ->
@@ -220,7 +245,7 @@ module LayerTwo =
         async {
             let account = AskLightningAccount ()
             let channelStore = ChannelStore account
-            let channelIdOpt = AskChannelId channelStore false
+            let channelIdOpt = AskChannelId channelStore (Some false)
             match channelIdOpt with
             | None -> return ()
             | Some channelId ->
