@@ -25,6 +25,7 @@ type internal Operations =
     | AcceptChannel           = 11
     | SendLightningPayment    = 12
     | ReceiveLightningPayment = 13
+    | CloseChannel            = 14
 
 type WhichAccount =
     All of seq<IAccount> | MatchingWith of IAccount
@@ -100,6 +101,11 @@ module UserInteraction =
                 let channelStore = ChannelStore account
                 channelStore.ListChannelInfos()
             ).Any(fun channelInfo -> not channelInfo.IsFunder)
+        | Operations.CloseChannel ->
+            activeAccounts.OfType<UtxoCoin.NormalUtxoAccount>().SelectMany(fun account ->
+                let channelStore = ChannelStore account
+                channelStore.ListChannelInfos()
+            ).Any()
         | _ -> true
 
     let rec internal AskFileNameToLoad (askText: string): FileInfo =

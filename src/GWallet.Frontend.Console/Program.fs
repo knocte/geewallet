@@ -344,6 +344,8 @@ let rec PerformOperation (activeAccounts: seq<IAccount>): unit =
         LayerTwo.SendPayment() |> Async.RunSynchronously
     | Operations.ReceiveLightningPayment ->
         LayerTwo.ReceivePayment() |> Async.RunSynchronously
+    | Operations.CloseChannel ->
+        LayerTwo.CloseChannel() |> Async.RunSynchronously
     | _ -> failwith "Unreachable"
 
 let rec GetAccountOfSameCurrency currency =
