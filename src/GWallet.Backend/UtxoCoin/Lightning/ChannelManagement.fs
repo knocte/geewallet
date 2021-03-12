@@ -46,6 +46,7 @@ type ChannelInfo =
         Capacity: decimal
         MaxBalance: decimal
         MinBalance: decimal
+        FundingOutPointIndex: uint32
         FundingTxId: TransactionIdentifier
         Status: ChannelStatus
         Currency: Currency
@@ -61,6 +62,7 @@ type ChannelInfo =
         MaxBalance = serializedChannel.MaxBalance().ToMoney().ToUnit MoneyUnit.BTC
         MinBalance = serializedChannel.MinBalance().ToMoney().ToUnit MoneyUnit.BTC
         FundingTxId = TransactionIdentifier.FromHash serializedChannel.Commitments.FundingScriptCoin.Outpoint.Hash
+        FundingOutPointIndex = serializedChannel.Commitments.FundingScriptCoin.Outpoint.N
         Currency = currency
         Status =
             match serializedChannel.ChanState with

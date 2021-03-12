@@ -165,6 +165,29 @@ type Lnd = {
         | err -> return Error err
     }
 
+    member self.CloseChannel (fundingOutPoint: OutPoint)
+        : Async<unit> =
+        async {
+            let client = self.Client()
+            let fundingTxIdStr = fundingOutPoint.Hash.ToString()
+            let fundingOutputIndex = fundingOutPoint.N
+            try
+                let! _response =
+                    Async.AwaitTask
+                    <| client.SwaggerClient.CloseChannelAsync(fundingTxIdStr, int64 fundingOutputIndex)
+                return ()
+            with
+            | ex ->
+                // BTCPayServer.Lightning is broken and doesn't handle the
+                // channel-closed reply from lnd properly. This catches the exception (and
+                // hopefully not other, unrelated exceptions).
+                // See: https://github.com/btcpayserver/BTCPayServer.Lightning/issues/38
+                match FSharpUtil.FindException<Newtonsoft.Json.JsonReaderException> ex with
+                | None -> return raise <| FSharpUtil.ReRaise ex
+                | Some _ -> return ()
+        }
+
+
     member self.FundByMining (bitcoind: Bitcoind)
                                  : Async<unit> = async {
         let! lndDepositAddress = self.GetDepositAddress()
