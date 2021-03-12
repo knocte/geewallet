@@ -13,6 +13,30 @@ open GWallet.Backend.FSharpUtil
 
 module LayerTwo =
 
+    let rec AskLightningAccount(): UtxoCoin.NormalUtxoAccount =
+        let account = UserInteraction.AskAccount()
+        let lightningCurrency = UtxoCoin.Lightning.Settings.Currency
+        if account.Currency <> lightningCurrency then
+            Console.WriteLine (
+                sprintf
+                    "The only currency supported for Lightning is %A, please select a %A account"
+                    lightningCurrency
+                    lightningCurrency
+            )
+            AskLightningAccount ()
+        else
+            match account with
+            | :? UtxoCoin.NormalUtxoAccount as btcAccount -> btcAccount
+            | :? UtxoCoin.ReadOnlyUtxoAccount ->
+                Console.WriteLine "Read-only accounts cannot be used in lightning"
+                AskLightningAccount ()
+            | :? UtxoCoin.ArchivedUtxoAccount ->
+                Console.WriteLine "This account has been archived. You must select an active account"
+                AskLightningAccount ()
+            | _ ->
+                Console.WriteLine "Invalid account for use with Lightning"
+                AskLightningAccount ()
+
     let AskChannelCounterpartyConnectionDetails currency: Option<Lightning.NodeEndPoint> =
         let useQRString =
             UserInteraction.AskYesNo
@@ -87,7 +111,7 @@ module LayerTwo =
 
     let OpenChannel(): Async<unit> =
         async {
-            let account = UserInteraction.AskBitcoinAccount()
+            let account = AskLightningAccount ()
             let currency = (account :> IAccount).Currency
             let channelStore = ChannelStore account
 
@@ -150,7 +174,7 @@ module LayerTwo =
 
     let AcceptChannel(): Async<unit> =
         async {
-            let account = UserInteraction.AskBitcoinAccount()
+            let account = AskLightningAccount ()
             let channelStore = ChannelStore account
             let bindAddress = AskBindAddress()
             let password = UserInteraction.AskPassword false
@@ -170,7 +194,7 @@ module LayerTwo =
 
     let SendPayment(): Async<unit> =
         async {
-            let account = UserInteraction.AskBitcoinAccount()
+            let account = AskLightningAccount ()
             let channelStore = ChannelStore account
             let channelIdOpt = AskChannelId channelStore true
             match channelIdOpt with
@@ -194,7 +218,7 @@ module LayerTwo =
 
     let ReceivePayment(): Async<unit> =
         async {
-            let account = UserInteraction.AskBitcoinAccount()
+            let account = AskLightningAccount ()
             let channelStore = ChannelStore account
             let channelIdOpt = AskChannelId channelStore false
             match channelIdOpt with
