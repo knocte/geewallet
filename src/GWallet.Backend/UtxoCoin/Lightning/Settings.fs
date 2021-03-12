@@ -13,7 +13,7 @@ open GWallet.Backend
 module Settings =
 
     // FIXME: this should return seq<> so that we can run Lightning on Litecoin too
-    let internal Currency = Currency.BTC
+    let Currency = Currency.BTC
 
     let internal PeerLimits: ChannelHandshakeLimits = {
         ForceChannelAnnouncementPreference = false
