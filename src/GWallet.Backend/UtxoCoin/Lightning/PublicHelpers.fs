@@ -28,7 +28,9 @@ module public Network =
     let public OpenChannel (nodeClient: NodeClient) = nodeClient.OpenChannel
     let public CloseChannel (nodeClient: NodeClient) = nodeClient.InitiateCloseChannel
 
+    [<Obsolete "Use ReceiveLightningEvent instead">]
     let public AcceptCloseChannel (nodeServer: NodeServer) = nodeServer.AcceptCloseChannel
+
     let public CheckClosingFinished (channel: ChannelInfo): Async<bool> =
         async {
             let! resCheck = ClosedChannel.CheckClosingFinished channel.FundingTxId.DnlTxId
@@ -43,7 +45,11 @@ module public Network =
     let public ConnectLockChannelFunding (nodeClient: NodeClient) = nodeClient.ConnectLockChannelFunding
 
     let public AcceptChannel (nodeServer: NodeServer) = nodeServer.AcceptChannel ()
+
+    [<Obsolete "Use ReceiveLightningEvent instead">]
     let public ReceiveMonoHopPayment (nodeServer: NodeServer) = nodeServer.ReceiveMonoHopPayment
+
+    let public ReceiveLightningEvent (nodeServer: NodeServer) = nodeServer.ReceiveLightningEvent
     let public AcceptLockChannelFunding (nodeServer: NodeServer) = nodeServer.AcceptLockChannelFunding
 
     let public EndPoint (nodeServer: NodeServer) = nodeServer.EndPoint

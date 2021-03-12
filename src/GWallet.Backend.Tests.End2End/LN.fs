@@ -1,3 +1,6 @@
+// because of the use of internal AcceptCloseChannel and ReceiveMonoHopPayment
+#nowarn "44"
+
 namespace GWallet.Backend.Tests.End2End
 
 open System.Threading

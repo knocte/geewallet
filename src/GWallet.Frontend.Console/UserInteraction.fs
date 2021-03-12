@@ -24,7 +24,7 @@ type internal Operations =
     | OpenChannel             = 10
     | AcceptChannel           = 11
     | SendLightningPayment    = 12
-    | ReceiveLightningPayment = 13
+    | ReceiveLightningEvent   = 13
     | CloseChannel            = 14
 
 type WhichAccount =
@@ -96,8 +96,8 @@ module UserInteraction =
                 let channelStore = ChannelStore account
                 channelStore.ListChannelInfos()
             ).Any(fun channelInfo -> channelInfo.IsFunder)
-        | Operations.ReceiveLightningPayment ->
-            activeAccounts.OfType<NormalUtxoAccount>().SelectMany(fun account ->
+        | Operations.ReceiveLightningEvent ->
+            activeAccounts.OfType<UtxoCoin.NormalUtxoAccount>().SelectMany(fun account ->
                 let channelStore = ChannelStore account
                 channelStore.ListChannelInfos()
             ).Any(fun channelInfo -> not channelInfo.IsFunder)

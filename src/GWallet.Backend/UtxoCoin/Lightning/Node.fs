@@ -6,6 +6,7 @@ open System.Net
 
 open NBitcoin
 open DotNetLightning.Utils
+open DotNetLightning.Serialization.Msgs
 open ResultUtils.Portability
 
 open GWallet.Backend
@@ -71,9 +72,21 @@ type internal NodeAcceptCloseChannelError =
                 SPrintF1 "error accepting channel close on reconnected channel: %s"
                          (acceptCloseChannelError :> IErrorMsg).Message
 
+type internal NodeReceiveLightningEventError =
+    | Reconnect of ReconnectActiveChannelError
+    interface IErrorMsg with
+        member self.Message =
+            match self with
+            | Reconnect reconnectActiveChannelError ->
+                SPrintF1 "error reconnecting channel: %s" (reconnectActiveChannelError :> IErrorMsg).Message
+
 type IChannelToBeOpened =
     abstract member ConfirmationsRequired: uint32 with get
     abstract member ChannelId: ChannelIdentifier with get
+
+type IncomingChannelEvent =
+    | MonoHopUnidirectionalPayment
+    | Shutdown
 
 type PendingChannel internal (outgoingUnfundedChannel: OutgoingUnfundedChannel) =
     member internal self.OutgoingUnfundedChannel = outgoingUnfundedChannel
@@ -278,6 +291,7 @@ type NodeServer internal (nodeClient: NodeClient, transportListener: TransportLi
                 return Ok (channelId, txId)
     }
 
+    // use ReceiveLightningEvent instead
     member internal self.ReceiveMonoHopPayment (channelId: ChannelIdentifier)
                                                    : Async<Result<unit, IErrorMsg>> = async {
         let! activeChannelRes = ActiveChannel.AcceptReestablish self.ChannelStore self.TransportListener channelId
@@ -336,6 +350,7 @@ type NodeServer internal (nodeClient: NodeClient, transportListener: TransportLi
                     return Ok ()
             }
 
+    // use ReceiveLightningEvent instead
     member internal self.AcceptCloseChannel (channelId: ChannelIdentifier)
                                                 : Async<Result<unit, IErrorMsg>> = async {
         let! activeChannelRes = ActiveChannel.AcceptReestablish self.ChannelStore self.TransportListener channelId
@@ -409,6 +424,44 @@ type NodeServer internal (nodeClient: NodeClient, transportListener: TransportLi
                 (activeChannel :> IDisposable).Dispose()
                 return Ok ()
         }
+
+    member internal self.ReceiveLightningEvent (channelId: ChannelIdentifier)
+                                                   : Async<Result<IncomingChannelEvent, IErrorMsg>> =
+        async {
+            let! activeChannelRes = ActiveChannel.AcceptReestablish self.ChannelStore self.TransportListener channelId
+            match activeChannelRes with
+            | Error reconnectActiveChannelError ->
+                if reconnectActiveChannelError.PossibleBug then
+                    let msg =
+                        SPrintF2
+                            "error accepting connection from peer to receive lightning event on channel %s: %s"
+                            (channelId.ToString())
+                            (reconnectActiveChannelError :> IErrorMsg).Message
+                    Infrastructure.ReportWarningMessage msg
+                    |> ignore<bool>
+                return Error <| (NodeReceiveLightningEventError.Reconnect reconnectActiveChannelError :> IErrorMsg)
+            | Ok activeChannel ->
+                let connectedChannel = activeChannel.ConnectedChannel
+                Infrastructure.LogDebug "Waiting for lightning message"
+                let! recvChannelMsgRes = connectedChannel.PeerNode.RecvChannelMsg()
+                match recvChannelMsgRes with
+                | Error err ->
+                    return failwith <| SPrintF1 "Received error while waiting for lightning message: %s" (err :> IErrorMsg).Message
+                | Ok (_, channelMsg) ->
+                    match channelMsg with
+                    | :? MonoHopUnidirectionalPaymentMsg as monoHopUnidirectionalPaymentMsg ->
+                        let! res = self.HandleMonoHopUnidirectionalPaymentMsg activeChannel channelId monoHopUnidirectionalPaymentMsg
+                        match res with
+                        | Error err -> return Error err
+                        | Ok _ -> return Ok IncomingChannelEvent.MonoHopUnidirectionalPayment
+                    | :? ShutdownMsg as shutdownMsg ->
+                        let! res = self.HandleShutdownMsg activeChannel shutdownMsg
+                        match res with
+                        | Error err -> return Error err
+                        | Ok _ -> return Ok IncomingChannelEvent.Shutdown
+                    | msg -> return failwith <| SPrintF1 "Received invalid msg while waiting for lightning event: %A" msg
+        }
+
 
 module public Connection =
     let public StartClient (channelStore: ChannelStore)
