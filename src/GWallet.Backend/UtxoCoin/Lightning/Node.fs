@@ -426,42 +426,53 @@ type NodeServer internal (nodeClient: NodeClient, transportListener: TransportLi
         }
 
     member internal self.ReceiveLightningEvent (channelId: ChannelIdentifier)
-                                                   : Async<Result<IncomingChannelEvent, IErrorMsg>> =
-        async {
-            let! activeChannelRes = ActiveChannel.AcceptReestablish self.ChannelStore self.TransportListener channelId
-            match activeChannelRes with
-            | Error reconnectActiveChannelError ->
-                if reconnectActiveChannelError.PossibleBug then
-                    let msg =
-                        SPrintF2
-                            "error accepting connection from peer to receive lightning event on channel %s: %s"
-                            (channelId.ToString())
-                            (reconnectActiveChannelError :> IErrorMsg).Message
-                    Infrastructure.ReportWarningMessage msg
-                    |> ignore<bool>
-                return Error <| (NodeReceiveLightningEventError.Reconnect reconnectActiveChannelError :> IErrorMsg)
-            | Ok activeChannel ->
-                let connectedChannel = activeChannel.ConnectedChannel
-                Infrastructure.LogDebug "Waiting for lightning message"
-                let! recvChannelMsgRes = connectedChannel.PeerNode.RecvChannelMsg()
-                match recvChannelMsgRes with
-                | Error err ->
-                    return failwith <| SPrintF1 "Received error while waiting for lightning message: %s" (err :> IErrorMsg).Message
-                | Ok (_, channelMsg) ->
-                    match channelMsg with
-                    | :? MonoHopUnidirectionalPaymentMsg as monoHopUnidirectionalPaymentMsg ->
-                        let! res = self.HandleMonoHopUnidirectionalPaymentMsg activeChannel channelId monoHopUnidirectionalPaymentMsg
-                        match res with
-                        | Error err -> return Error err
-                        | Ok _ -> return Ok IncomingChannelEvent.MonoHopUnidirectionalPayment
-                    | :? ShutdownMsg as shutdownMsg ->
-                        let! res = self.HandleShutdownMsg activeChannel shutdownMsg
-                        match res with
-                        | Error err -> return Error err
-                        | Ok _ -> return Ok IncomingChannelEvent.Shutdown
-                    | msg -> return failwith <| SPrintF1 "Received invalid msg while waiting for lightning event: %A" msg
+                                                   : Async<Result<IncomingChannelEvent, IErrorMsg>> = async {
+        let rec receiveEvent (activeChannel: ActiveChannel) = async {
+            Infrastructure.LogDebug "Waiting for lightning message"
+            let connectedChannel = activeChannel.ConnectedChannel
+            let peerNode = connectedChannel.PeerNode
+            let! recvChannelMsgRes = peerNode.RecvChannelMsg()
+            match recvChannelMsgRes with
+            | Error err ->
+                return failwith <| SPrintF1 "Received error while waiting for lightning message: %s" (err :> IErrorMsg).Message
+            | Ok (peerNodeAfterMsgReceived, channelMsg) ->
+                let connectedChannelAfterMsgReceived = {
+                    connectedChannel with
+                        PeerNode = peerNodeAfterMsgReceived
+                }
+                let activeChannelAfterMsgReceived = {
+                    activeChannel with
+                        ConnectedChannel = connectedChannelAfterMsgReceived
+                }
+                match channelMsg with
+                | :? MonoHopUnidirectionalPaymentMsg as monoHopUnidirectionalPaymentMsg ->
+                    let! res = self.HandleMonoHopUnidirectionalPaymentMsg activeChannelAfterMsgReceived channelId monoHopUnidirectionalPaymentMsg
+                    match res with
+                    | Error err -> return Error err
+                    | Ok () -> return Ok IncomingChannelEvent.MonoHopUnidirectionalPayment
+                | :? ShutdownMsg as shutdownMsg ->
+                    let! res = self.HandleShutdownMsg activeChannelAfterMsgReceived shutdownMsg
+                    match res with
+                    | Error err -> return Error err
+                    | Ok () -> return Ok IncomingChannelEvent.Shutdown
+                | _ ->
+                    Infrastructure.LogDebug <| SPrintF2 "Ignoring this msg (%A): %A" (channelMsg.GetType()) channelMsg
+                    return! receiveEvent activeChannelAfterMsgReceived
         }
-
+        let! activeChannelRes = ActiveChannel.AcceptReestablish self.ChannelStore self.TransportListener channelId
+        match activeChannelRes with
+        | Error reconnectActiveChannelError ->
+            if reconnectActiveChannelError.PossibleBug then
+                let msg =
+                    SPrintF2
+                        "error accepting connection from peer to receive lightning event on channel %s: %s"
+                        (channelId.ToString())
+                        (reconnectActiveChannelError :> IErrorMsg).Message
+                Infrastructure.ReportWarningMessage msg
+                |> ignore<bool>
+            return Error <| (NodeReceiveLightningEventError.Reconnect reconnectActiveChannelError :> IErrorMsg)
+        | Ok activeChannel -> return! receiveEvent activeChannel
+    }
 
 module public Connection =
     let public StartClient (channelStore: ChannelStore)

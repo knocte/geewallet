@@ -486,3 +486,85 @@ type LN() =
         return ()
     }
 
+    [<Test>]
+    member __.``can accept channel closure from LND``() = Async.RunSynchronously <| async {
+        use! walletInstance = WalletInstance.New None None
+        use bitcoind = Bitcoind.Start()
+        use _electrumServer = ElectrumServer.Start bitcoind
+        use! lnd = Lnd.Start bitcoind
+
+        do! lnd.FundByMining bitcoind
+
+        let acceptChannelTask = Lightning.Network.AcceptChannel walletInstance.NodeServer
+        let openChannelTask = async {
+            do! lnd.ConnectTo walletInstance.NodeEndPoint
+            return!
+                lnd.OpenChannel
+                    walletInstance.NodeEndPoint
+                    (Money(0.002m, MoneyUnit.BTC))
+                    (FeeRatePerKw 666u)
+        }
+
+        let! acceptChannelRes, openChannelRes = AsyncExtensions.MixedParallel2 acceptChannelTask openChannelTask
+        let (channelId, _) = UnwrapResult acceptChannelRes "AcceptChannel failed"
+        UnwrapResult openChannelRes "lnd.OpenChannel failed"
+
+        // Wait for the funding transaction to appear in mempool
+        while bitcoind.GetTxIdsInMempool().Length = 0 do
+            Thread.Sleep 500
+
+        // Mine blocks on top of the funding transaction to make it confirmed.
+        let minimumDepth = BlockHeightOffset32 6u
+        bitcoind.GenerateBlocks minimumDepth walletInstance.Address
+
+        do! walletInstance.WaitForFundingConfirmed channelId
+
+        let! lockFundingRes = Lightning.Network.AcceptLockChannelFunding walletInstance.NodeServer channelId
+        UnwrapResult lockFundingRes "LockChannelFunding failed"
+
+        let channelInfo = walletInstance.ChannelStore.ChannelInfo channelId
+        match channelInfo.Status with
+        | ChannelStatus.Active -> ()
+        | status -> failwith (SPrintF1 "unexpected channel status. Expected Active, got %A" status)
+
+        // wait for lnd to realise we're offline
+        do! Async.Sleep 1000
+        let fundingOutPoint =
+            let fundingTxId = uint256(channelInfo.FundingTxId.ToString())
+            let fundingOutPointIndex = channelInfo.FundingOutPointIndex
+            OutPoint(fundingTxId, fundingOutPointIndex)
+        let closeChannelTask = async {
+            do! lnd.ConnectTo walletInstance.NodeEndPoint
+            do! Async.Sleep 1000
+            do! lnd.CloseChannel fundingOutPoint
+            return ()
+        }
+        let awaitCloseTask = async {
+            let rec receiveEvent () = async {
+                let! receivedEvent = Lightning.Network.ReceiveLightningEvent walletInstance.NodeServer channelId
+                match receivedEvent with
+                | Error err ->
+                    return Error (SPrintF1 "Failed to receive shutdown msg from LND: %A" err)
+                | Ok event when event = IncomingChannelEvent.Shutdown ->
+                    return Ok ()
+                | _ -> return! receiveEvent ()
+            }
+
+            let! receiveEventRes = receiveEvent()
+            UnwrapResult receiveEventRes "failed to accept close channel"
+
+            // Wait for the closing transaction to appear in mempool
+            while bitcoind.GetTxIdsInMempool().Length = 0 do
+                Thread.Sleep 500
+
+            // Mine blocks on top of the closing transaction to make it confirmed.
+            let minimumDepth = BlockHeightOffset32 6u
+            bitcoind.GenerateBlocks minimumDepth walletInstance.Address
+            return ()
+        }
+
+        let! (), () = AsyncExtensions.MixedParallel2 closeChannelTask awaitCloseTask
+
+        return ()
+    }
+
