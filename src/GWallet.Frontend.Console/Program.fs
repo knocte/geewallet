@@ -1,250 +1,10 @@
 ﻿open System
-open System.IO
 open System.Linq
-open System.Text.RegularExpressions
-open System.Net
-
-open ResultUtils.Portability
 
 open GWallet.Backend
 open GWallet.Backend.FSharpUtil
 open GWallet.Backend.UtxoCoin
-open GWallet.Backend.UtxoCoin.Lightning
 open GWallet.Frontend.Console
-
-let OpenChannel(): Async<unit> = async {
-    let account = UserInteraction.AskBitcoinAccount()
-    let currency = (account :> IAccount).Currency
-    let channelStore = ChannelStore account
-
-    match UserInteraction.AskAmount account with
-    | None -> return ()
-    | Some channelCapacity ->
-        match UserInteraction.AskChannelCounterpartyConnectionDetails currency with
-        | None -> return ()
-        | Some nodeEndPoint ->
-            Infrastructure.LogDebug "Calling EstimateFee..."
-            let! metadataOpt = async {
-                try
-                    let! metadata = UtxoCoin.Lightning.ChannelManager.EstimateChannelOpeningFee account channelCapacity
-                    return Some metadata
-                with
-                | InsufficientBalanceForFee _ ->
-                    Console.WriteLine
-                        "Estimated fee is too high for the remaining balance, \
-                        use a different account or a different amount."
-                    return None
-            }
-            match metadataOpt with
-            | None -> return ()
-            | Some metadata ->
-                Presentation.ShowFeeAndSpendableBalance metadata channelCapacity
-
-                let acceptFeeRate = UserInteraction.AskYesNo "Do you accept?"
-                if acceptFeeRate then
-                    let password = UserInteraction.AskPassword false
-                    let nodeClient = Lightning.Connection.StartClient channelStore password
-                    let! pendingChannelRes =
-                        Lightning.Network.OpenChannel
-                            nodeClient
-                            nodeEndPoint
-                            channelCapacity
-                            metadata
-                            password
-                    match pendingChannelRes with
-                    | Error nodeOpenChannelError ->
-                        Console.WriteLine (sprintf "Error opening channel: %s" nodeOpenChannelError.Message)
-                    | Ok pendingChannel ->
-                        let minimumDepth = (pendingChannel :> IChannelToBeOpened).ConfirmationsRequired
-                        Console.WriteLine(
-                            sprintf
-                                "Opening a channel with this party will require %i confirmations (~%i minutes)"
-                                minimumDepth
-                                (minimumDepth * 10u)
-                        )
-                        let acceptMinimumDepth = UserInteraction.AskYesNo "Do you accept?"
-                        if acceptMinimumDepth then
-                            let! txIdRes = pendingChannel.Accept()
-                            match txIdRes with
-                            | Error fundChannelError ->
-                                Console.WriteLine(sprintf "Error funding channel: %s" fundChannelError.Message)
-                            | Ok txId ->
-                                let uri = BlockExplorer.GetTransaction currency (TxId.ToString txId)
-                                Console.WriteLine(sprintf "A funding transaction was broadcast: %A" uri)
-            UserInteraction.PressAnyKeyToContinue()
-}
-
-let AcceptChannel(): Async<unit> = async {
-    let account = UserInteraction.AskBitcoinAccount()
-    let channelStore = ChannelStore account
-    let bindAddress = UserInteraction.AskBindAddress()
-    let password = UserInteraction.AskPassword false
-    use nodeServer = Lightning.Connection.StartServer channelStore password bindAddress
-    let nodeEndPoint = Lightning.Network.EndPoint nodeServer
-    Console.WriteLine(sprintf "This node, connect to it: %s" (nodeEndPoint.ToString()))
-    let! acceptChannelRes = Lightning.Network.AcceptChannel nodeServer
-    match acceptChannelRes with
-    | Error nodeAcceptChannelError ->
-        Console.WriteLine
-            (sprintf "Error accepting channel: %s" nodeAcceptChannelError.Message)
-    | Ok (_, txId) ->
-        Console.WriteLine (sprintf "Channel opened. Transaction ID: %s" (TxId.ToString txId))
-        Console.WriteLine "Waiting for funding locked."
-    UserInteraction.PressAnyKeyToContinue()
-}
-
-let SendLightningPayment(): Async<unit> = async {
-    let account = UserInteraction.AskBitcoinAccount()
-    let channelStore = ChannelStore account
-    let channelIdOpt = UserInteraction.AskChannelId channelStore true
-    match channelIdOpt with
-    | None -> return ()
-    | Some channelId ->
-        let channelInfo = channelStore.ChannelInfo channelId
-        let transferAmountOpt = UserInteraction.AskLightningAmount channelInfo
-        match transferAmountOpt with
-        | None -> ()
-        | Some transferAmount ->
-            let password = UserInteraction.AskPassword false
-            let nodeClient = Lightning.Connection.StartClient channelStore password
-            let! paymentRes = Lightning.Network.SendMonoHopPayment nodeClient channelId transferAmount
-            match paymentRes with
-            | Error nodeSendMonoHopPaymentError ->
-                Console.WriteLine(sprintf "Error sending monohop payment: %s" nodeSendMonoHopPaymentError.Message)
-            | Ok () ->
-                Console.WriteLine "Payment sent."
-            UserInteraction.PressAnyKeyToContinue()
-}
-
-let ReceiveLightningPayment(): Async<unit> = async {
-    let account = UserInteraction.AskBitcoinAccount()
-    let channelStore = ChannelStore account
-    let channelIdOpt = UserInteraction.AskChannelId channelStore false
-    match channelIdOpt with
-    | None -> return ()
-    | Some channelId ->
-        let bindAddress = UserInteraction.AskBindAddress()
-        let password = UserInteraction.AskPassword false
-        use nodeServer = Lightning.Connection.StartServer channelStore password bindAddress
-
-        let! receivePaymentRes =
-            Lightning.Network.ReceiveMonoHopPayment nodeServer channelId
-        match receivePaymentRes with
-        | Error nodeReceiveMonoHopPaymentError ->
-            Console.WriteLine(sprintf "Error receiving monohop payment: %s" nodeReceiveMonoHopPaymentError.Message)
-        | Ok () ->
-            Console.WriteLine "Payment received."
-        UserInteraction.PressAnyKeyToContinue()
-}
-
-let LockChannel (channelStore: ChannelStore)
-                (channelInfo: ChannelInfo)
-                    : Async<seq<string>> =
-    let channelId = channelInfo.ChannelId
-    Console.WriteLine(sprintf "Funding for channel %s confirmed" (ChannelId.ToString channelId))
-    Console.WriteLine "In order to continue the funding for the channel needs to be locked"
-    let lockFundingAsync =
-        if channelInfo.IsFunder then
-            Console.WriteLine
-                "Ensure the fundee is ready to accept a connection to lock the funding, \
-                then press any key to continue."
-            Console.ReadKey true |> ignore
-            let password = UserInteraction.AskPassword false
-            let nodeClient = Lightning.Connection.StartClient channelStore password
-            Lightning.Network.ConnectLockChannelFunding nodeClient channelId
-        else
-            let bindAddress =
-                Console.WriteLine "Listening for connection from peer"
-                UserInteraction.AskBindAddress()
-            let password = UserInteraction.AskPassword false
-            use nodeServer = Lightning.Connection.StartServer channelStore password bindAddress
-            Lightning.Network.AcceptLockChannelFunding nodeServer channelId
-    async {
-        let! lockFundingRes = lockFundingAsync
-        match lockFundingRes with
-        | Error lockFundingError ->
-            Console.WriteLine(sprintf "Error reestablishing channel: %s" lockFundingError.Message)
-        | Ok () ->
-            Console.WriteLine(sprintf "funding locked for channel %s" (ChannelId.ToString channelId))
-        return seq {
-            yield! UserInteraction.DisplayLightningChannelStatus channelInfo
-            yield "        funding locked - channel is now active"
-        }
-    }
-
-let LockChannelIfFundingConfirmed (channelStore: ChannelStore)
-                                  (channelInfo: ChannelInfo)
-                                  (fundingBroadcastButNotLockedData: FundingBroadcastButNotLockedData)
-                                      : Async<Async<seq<string>>> = async {
-    let! remainingConfirmations = fundingBroadcastButNotLockedData.GetRemainingConfirmations()
-    if remainingConfirmations = 0u then
-        return LockChannel channelStore channelInfo
-    else
-        return async {
-            return seq {
-                yield! UserInteraction.DisplayLightningChannelStatus channelInfo
-                yield sprintf "        waiting for %i more confirmations" remainingConfirmations
-            }
-        }
-}
-
-let GetChannelStatuses (accounts: seq<IAccount>): seq<Async<Async<seq<string>>>> = seq {
-    let normalUtxoAccounts = accounts.OfType<UtxoCoin.NormalUtxoAccount>()
-    for account in normalUtxoAccounts do
-        let channelStore = ChannelStore account
-        let channelIds = channelStore.ListChannelIds()
-        yield async {
-            return async {
-                return seq {
-                    yield sprintf "Lightning Status (%i channels)" (Seq.length channelIds)
-                }
-            }
-        }
-        for channelId in channelIds do
-            let channelInfo = channelStore.ChannelInfo channelId
-            match channelInfo.Status with
-            | ChannelStatus.FundingBroadcastButNotLocked fundingBroadcastButNotLockedData ->
-                yield
-                    LockChannelIfFundingConfirmed channelStore channelInfo fundingBroadcastButNotLockedData
-            | ChannelStatus.Active ->
-                yield
-                    async {
-                        return async {
-                            return seq {
-                                yield! UserInteraction.DisplayLightningChannelStatus channelInfo
-                                yield "        channel is active"
-                            }
-                        }
-                    }
-            | ChannelStatus.Broken ->
-                yield
-                    async {
-                        return async {
-                            return seq {
-                                yield! UserInteraction.DisplayLightningChannelStatus channelInfo
-                                yield "        channel is in an abnormal state"
-                            }
-                        }
-                    }
-            | ChannelStatus.Closing ->
-                yield
-                    async {
-                        return async {
-                            let! isClosed = UtxoCoin.Lightning.Network.CheckClosingFinished channelInfo
-                            let showTheChannel = not isClosed
-                            if showTheChannel then
-                                return seq {
-                                    yield! UserInteraction.DisplayLightningChannelStatus channelInfo
-                                    yield "        channel is in being closed"
-                                }
-                            else
-                                return Seq.empty
-                        }
-                    }
-            | ChannelStatus.Closed ->
-                ()
-
-}
 
 let rec TrySendAmount (account: NormalAccount) transactionMetadata destination amount =
     let password = UserInteraction.AskPassword false
@@ -573,13 +333,13 @@ let rec PerformOperation (accounts: seq<IAccount>): unit =
     | Operations.Options ->
         WalletOptions()
     | Operations.OpenChannel ->
-        OpenChannel() |> Async.RunSynchronously
+        LayerTwo.OpenChannel() |> Async.RunSynchronously
     | Operations.AcceptChannel ->
-        AcceptChannel() |> Async.RunSynchronously
+        LayerTwo.AcceptChannel() |> Async.RunSynchronously
     | Operations.SendLightningPayment ->
-        SendLightningPayment() |> Async.RunSynchronously
+        LayerTwo.SendPayment() |> Async.RunSynchronously
     | Operations.ReceiveLightningPayment ->
-        ReceiveLightningPayment() |> Async.RunSynchronously
+        LayerTwo.ReceivePayment() |> Async.RunSynchronously
     | _ -> failwith "Unreachable"
 
 let rec GetAccountOfSameCurrency currency =
@@ -619,7 +379,7 @@ let rec CheckArchivedAccountsAreEmpty(): bool =
 
 let rec ProgramMainLoop() =
     let accounts = Account.GetAllActiveAccounts()
-    let channelStatusJobs: seq<Async<Async<seq<string>>>> = GetChannelStatuses accounts
+    let channelStatusJobs: seq<Async<Async<seq<string>>>> = LayerTwo.GetChannelStatuses accounts
     let channelInfoInteractionsJob: Async<array<Async<seq<string>>>> = Async.Parallel channelStatusJobs
     let displayAccountStatusesJob =
         UserInteraction.DisplayAccountStatuses(WhichAccount.All accounts)
