@@ -27,8 +27,8 @@ type LN() =
     let Setup () =
         async {
             let! walletInstance = WalletInstance.New None None
-            let bitcoind = Bitcoind.Start()
-            let electrumServer = ElectrumServer.Start bitcoind
+            let! bitcoind = Bitcoind.Start()
+            let! electrumServer = ElectrumServer.Start bitcoind
             let! lnd = Lnd.Start bitcoind
 
             return walletInstance, bitcoind, electrumServer, lnd

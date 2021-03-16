@@ -13,7 +13,7 @@ type ElectrumServer = {
             self.ProcessWrapper.WaitForExit()
             Directory.Delete(self.DbDir, true)
 
-    static member Start(bitcoind: Bitcoind): ElectrumServer =
+    static member Start(bitcoind: Bitcoind): Async<ElectrumServer> = async {
         let dbDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName())
         Directory.CreateDirectory dbDir |> ignore
         let processWrapper =
@@ -29,7 +29,11 @@ type ElectrumServer = {
                 ])
                 true
         processWrapper.WaitForMessage (fun msg -> msg.EndsWith "TCP server listening on [::1]:50001")
-        {
+
+        do! Async.Sleep 5000
+
+        return {
             DbDir = dbDir
             ProcessWrapper = processWrapper
         }
+    }
