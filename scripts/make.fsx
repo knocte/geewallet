@@ -256,6 +256,10 @@ let RunTests (suite: string) =
             "MonoHopUnidirectionalPayments"
             "ChannelClosingAfterJustOpening"
             "ChannelClosingAfterSendingMonoHopPayments"
+
+            (* not ready yet:
+            "ChannelForceClosing"
+             *)
         ]
 
     let geewallet2geewalletTestNamePrefix, funderSuffix, fundeeSuffix = "G2G_", "_Funder", "_Fundee"

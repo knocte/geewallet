@@ -372,6 +372,7 @@ module LayerTwo =
                                         return Seq.empty
                                 }
                             }
+                    | ChannelStatus.LocallyForceClosed _
                     | ChannelStatus.Closed ->
                         ()
         }

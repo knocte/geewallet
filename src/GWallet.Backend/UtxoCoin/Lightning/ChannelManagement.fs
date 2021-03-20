@@ -30,10 +30,19 @@ type FundingBroadcastButNotLockedData =
                 return 0u
         }
 
+type LocallyForceClosedData =
+    {
+        Network: Network
+        Currency: Currency
+        ToSelfDelay: uint16
+        SpendingTransactionString: string
+    }
+
 type ChannelStatus =
     | FundingBroadcastButNotLocked of FundingBroadcastButNotLockedData
     | Closing
     | Closed
+    | LocallyForceClosed of LocallyForceClosedData
     | Active
     | Broken
 
