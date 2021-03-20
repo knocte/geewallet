@@ -61,6 +61,16 @@ type WalletInstance private (password: string, channelStore: ChannelStore, nodeS
     member self.NodeEndPoint =
         Lightning.Network.EndPoint self.NodeServer
 
+    member self.GetBalance(): Async<Money> = async {
+        let btcAccount = self.Account :?> NormalUtxoAccount
+        let! cachedBalance = Account.GetShowableBalance btcAccount ServerSelectionMode.Analysis None
+        match cachedBalance with
+        | NotFresh _ ->
+            do! Async.Sleep 500
+            return! self.GetBalance()
+        | Fresh amount -> return Money(amount, MoneyUnit.BTC)
+    }
+
     member self.WaitForBalance (minAmount: Money): Async<Money> = async {
         let btcAccount = self.Account :?> NormalUtxoAccount
         let! cachedBalance = Account.GetShowableBalance btcAccount ServerSelectionMode.Analysis None
