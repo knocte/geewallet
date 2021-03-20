@@ -474,6 +474,13 @@ type NodeServer internal (nodeClient: NodeClient, transportListener: TransportLi
         | Ok activeChannel -> return! receiveEvent activeChannel
     }
 
+module Node =
+    let ForceCloseChannel
+        (channelId: ChannelIdentifier)
+        : Async<string> =
+        channelId |> ignore<ChannelIdentifier>
+        raise <| NotImplementedException ()
+
 module public Connection =
     let public StartClient (channelStore: ChannelStore)
                            (password: string)
