@@ -327,14 +327,13 @@ type NodeClient internal (channelStore: ChannelStore, nodeMasterPrivKey: NodeMas
         }
 
 
-type NodeServer internal (nodeClient: NodeClient, transportListener: TransportListener) =
-    member val NodeClient = nodeClient
-    member val ChannelStore = nodeClient.ChannelStore
+type NodeServer internal (channelStore: ChannelStore, transportListener: TransportListener) =
+    member val ChannelStore = channelStore
     member val internal TransportListener = transportListener
     member val internal NodeMasterPrivKey = transportListener.NodeMasterPrivKey
     member val internal NodeId = transportListener.NodeId
     member val EndPoint = transportListener.EndPoint
-    member val Account = nodeClient.ChannelStore.Account
+    member val Account = channelStore.Account
 
     interface IDisposable with
         member self.Dispose() =
@@ -564,13 +563,16 @@ module public Connection =
         let nodeMasterPrivKey: NodeMasterPrivKey =
             NodeClient.AccountPrivateKeyToNodeSecret privateKey
             |> NodeMasterPrivKey
-        new NodeClient (channelStore, nodeMasterPrivKey)
+        NodeClient (channelStore, nodeMasterPrivKey)
 
     let public StartServer (channelStore: ChannelStore)
                            (password: string)
                            (bindAddress: IPEndPoint)
                                : NodeServer =
-        let nodeClient = StartClient channelStore password
-        let transportListener = TransportListener.Bind nodeClient.NodeMasterPrivKey bindAddress
-        new NodeServer (nodeClient, transportListener)
+        let privateKey = Account.GetPrivateKey channelStore.Account password
+        let nodeMasterPrivKey: NodeMasterPrivKey =
+            NodeClient.AccountPrivateKeyToNodeSecret privateKey
+            |> NodeMasterPrivKey
+        let transportListener = TransportListener.Bind nodeMasterPrivKey bindAddress
+        new NodeServer (channelStore, transportListener)
 

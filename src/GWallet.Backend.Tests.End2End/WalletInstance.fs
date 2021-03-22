@@ -14,10 +14,10 @@ open GWallet.Backend.UtxoCoin.Lightning
 open GWallet.Backend.FSharpUtil
 open GWallet.Backend.FSharpUtil.UwpHacks
 
-type WalletInstance private (password: string, channelStore: ChannelStore, nodeServer: NodeServer) =
+type private WalletInstance (password: string, channelStore: ChannelStore) =
     static let oneWalletAtATime: Semaphore = new Semaphore(1, 1)
 
-    static member New (listenEndpointOpt: Option<IPEndPoint>) (privateKeyOpt: Option<Key>): Async<WalletInstance> = async {
+    static member New (privateKeyOpt: Option<Key>): Async<WalletInstance> = async {
         oneWalletAtATime.WaitOne() |> ignore
 
         let password = Path.GetRandomFileName()
@@ -34,13 +34,7 @@ type WalletInstance private (password: string, channelStore: ChannelStore, nodeS
             let account = Account.GetAllActiveAccounts() |> Seq.filter (fun x -> x.Currency = Currency.BTC) |> Seq.head
             account :?> NormalUtxoAccount
         let channelStore = ChannelStore btcAccount
-        let nodeServer =
-            let listenEndpoint =
-                match listenEndpointOpt with
-                | Some listenEndpoint -> listenEndpoint
-                | None -> IPEndPoint(IPAddress.Parse "127.0.0.1", 0)
-            Connection.StartServer channelStore password listenEndpoint
-        return new WalletInstance(password, channelStore, nodeServer)
+        return new WalletInstance(password, channelStore)
     }
 
     interface IDisposable with
@@ -57,9 +51,6 @@ type WalletInstance private (password: string, channelStore: ChannelStore, nodeS
 
     member __.Password: string = password
     member __.ChannelStore: ChannelStore = channelStore
-    member __.NodeServer: NodeServer = nodeServer
-    member self.NodeEndPoint =
-        Lightning.Network.EndPoint self.NodeServer
 
     member self.GetBalance(): Async<Money> = async {
         let btcAccount = self.Account :?> NormalUtxoAccount
@@ -134,6 +125,40 @@ type WalletInstance private (password: string, channelStore: ChannelStore, nodeS
         bitcoind.GenerateBlocks consideredConfirmedAmountOfBlocksPlusOne self.Address
     }
 
+
+type ClientWalletInstance private (wallet: WalletInstance, nodeClient: NodeClient) =
+    static member New (privateKeyOpt: Option<Key>): Async<ClientWalletInstance> = async {
+        let! wallet = WalletInstance.New privateKeyOpt
+        let nodeClient =
+            Connection.StartClient wallet.ChannelStore wallet.Password
+        return new ClientWalletInstance(wallet, nodeClient)
+    }
+
+    interface IDisposable with
+        member __.Dispose() =
+            (wallet :> IDisposable).Dispose()
+
+    member __.Account: IAccount =
+        wallet.Account
+    member __.Address: BitcoinScriptAddress =
+        wallet.Address
+    member __.Password: string =
+        wallet.Password
+    member __.ChannelStore: ChannelStore =
+        wallet.ChannelStore
+    member __.GetBalance(): Async<Money> =
+        wallet.GetBalance()
+    member __.WaitForBalance(minAmount: Money): Async<Money> =
+        wallet.WaitForBalance minAmount
+    member __.WaitForFundingConfirmed(channelId: ChannelIdentifier): Async<unit> =
+        wallet.WaitForFundingConfirmed channelId
+    member __.FundByMining (bitcoind: Bitcoind)
+                           (lnd: Lnd)
+                               : Async<unit> =
+        wallet.FundByMining bitcoind lnd
+
+    member __.NodeClient: NodeClient = nodeClient
+
     member self.OpenChannelWithFundee (bitcoind: Bitcoind) (nodeEndPoint: NodeEndPoint)
                                           : Async<ChannelIdentifier*Money> = async {
         let fundingAmount = Money(0.1m, MoneyUnit.BTC)
@@ -144,7 +169,7 @@ type WalletInstance private (password: string, channelStore: ChannelStore, nodeS
         let! metadata = ChannelManager.EstimateChannelOpeningFee (self.Account :?> NormalUtxoAccount) transferAmount
         let! pendingChannelRes =
             Lightning.Network.OpenChannel
-                self.NodeServer.NodeClient
+                self.NodeClient
                 nodeEndPoint
                 transferAmount
                 metadata
@@ -158,7 +183,7 @@ type WalletInstance private (password: string, channelStore: ChannelStore, nodeS
 
         do! self.WaitForFundingConfirmed channelId
 
-        let! lockFundingRes = Lightning.Network.ConnectLockChannelFunding self.NodeServer.NodeClient channelId
+        let! lockFundingRes = Lightning.Network.ConnectLockChannelFunding self.NodeClient channelId
         UnwrapResult lockFundingRes "LockChannelFunding failed"
 
         let channelInfo = self.ChannelStore.ChannelInfo channelId
@@ -171,4 +196,40 @@ type WalletInstance private (password: string, channelStore: ChannelStore, nodeS
 
         return channelId, fundingAmount
     }
+
+
+type ServerWalletInstance private (wallet: WalletInstance, nodeServer: NodeServer) =
+    static member New (listenEndpoint: IPEndPoint) (privateKeyOpt: Option<Key>): Async<ServerWalletInstance> = async {
+        let! wallet = WalletInstance.New privateKeyOpt
+        let nodeServer =
+            Connection.StartServer wallet.ChannelStore wallet.Password listenEndpoint
+        return new ServerWalletInstance(wallet, nodeServer)
+    }
+
+    interface IDisposable with
+        member __.Dispose() =
+            (wallet :> IDisposable).Dispose()
+
+    member __.Account: IAccount =
+        wallet.Account
+    member __.Address: BitcoinScriptAddress =
+        wallet.Address
+    member __.Password: string =
+        wallet.Password
+    member __.ChannelStore: ChannelStore =
+        wallet.ChannelStore
+    member __.GetBalance(): Async<Money> =
+        wallet.GetBalance()
+    member __.WaitForBalance(minAmount: Money): Async<Money> =
+        wallet.WaitForBalance minAmount
+    member __.WaitForFundingConfirmed(channelId: ChannelIdentifier): Async<unit> =
+        wallet.WaitForFundingConfirmed channelId
+    member __.FundByMining (bitcoind: Bitcoind)
+                           (lnd: Lnd)
+                               : Async<unit> =
+        wallet.FundByMining bitcoind lnd
+
+    member __.NodeServer: NodeServer = nodeServer
+    member self.NodeEndPoint =
+        Lightning.Network.EndPoint self.NodeServer
 
