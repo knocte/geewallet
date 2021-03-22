@@ -52,7 +52,6 @@ module public Network =
     let public ReceiveLightningEvent (nodeServer: NodeServer) = nodeServer.ReceiveLightningEvent
     let public AcceptLockChannelFunding (nodeServer: NodeServer) = nodeServer.AcceptLockChannelFunding
 
-    let public ForceCloseChannel (_nodeClient: NodeClient) =
-        raise <| NotImplementedException ()
+    let public ForceCloseChannel (nodeClient: NodeClient) = nodeClient.ForceCloseChannel
 
     let public EndPoint (nodeServer: NodeServer) = nodeServer.EndPoint

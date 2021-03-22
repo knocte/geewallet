@@ -89,6 +89,7 @@ type SerializedChannel =
         // FIXME: should store just RemoteNodeEndPoint instead of CounterpartyIP+RemoteNodeId?
         CounterpartyIP: IPEndPoint
         RemoteNodeId: NodeId
+        LocalForceCloseSpendingTxOpt: Option<string>
         // this is the amount of confirmations that the counterparty told us that the funding transaction needs
         MinSafeDepth: BlockHeightOffset32
     }

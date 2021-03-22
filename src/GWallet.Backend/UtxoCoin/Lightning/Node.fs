@@ -5,6 +5,8 @@ open System.IO
 open System.Net
 
 open NBitcoin
+open DotNetLightning.Channel
+open DotNetLightning.Crypto
 open DotNetLightning.Utils
 open DotNetLightning.Serialization.Msgs
 open ResultUtils.Portability
@@ -60,6 +62,20 @@ type internal NodeReceiveMonoHopPaymentError =
                 SPrintF1 "error receiving payment on reconnected channel: %s"
                          (recvMonoHopPaymentError :> IErrorMsg).Message
 
+type NodeInitiateCloseChannelError =
+    | Reconnect of IErrorMsg
+    | InitiateCloseChannel of IErrorMsg
+    interface IErrorMsg with
+        member self.Message =
+            match self with
+            | Reconnect reconnectActiveChannelError ->
+                SPrintF1
+                    "error reconnecting channel: %s"
+                    reconnectActiveChannelError.Message
+            | InitiateCloseChannel closeChannelError ->
+                SPrintF1
+                    "error initiating channel-closing on reconnected channel: %s"
+                    closeChannelError.Message
 type internal NodeAcceptCloseChannelError =
     | Reconnect of ReconnectActiveChannelError
     | AcceptCloseChannel of CloseChannelError
@@ -205,18 +221,18 @@ type NodeClient internal (channelStore: ChannelStore, nodeMasterPrivKey: NodeMas
                 return Ok ()
     }
 
-    member internal self.InitiateCloseChannel (channelId: ChannelIdentifier): Async<Result<unit, IErrorMsg>> =
+    member internal self.InitiateCloseChannel (channelId: ChannelIdentifier): Async<Result<unit, NodeInitiateCloseChannelError>> =
         async {
             let! connectRes =
                 ActiveChannel.ConnectReestablish self.ChannelStore self.NodeMasterPrivKey channelId
             match connectRes with
             | Error connectError ->
-                return failwith <| SPrintF1 "Error reestablishing channel: %s" (connectError :> IErrorMsg).Message
+                return Error <| NodeInitiateCloseChannelError.Reconnect (connectError :> IErrorMsg)
             | Ok activeChannel ->
                 let! closeRes = ClosedChannel.InitiateCloseChannel activeChannel.ConnectedChannel
                 match closeRes with
                 | Error closeError ->
-                    return failwith <| SPrintF1 "Error closing channel: %s" (closeError :> IErrorMsg).Message
+                    return Error <| NodeInitiateCloseChannelError.InitiateCloseChannel (closeError :> IErrorMsg)
                 | Ok _ ->
                     return Ok ()
         }
@@ -244,6 +260,72 @@ type NodeClient internal (channelStore: ChannelStore, nodeMasterPrivKey: NodeMas
                 (activeChannel :> IDisposable).Dispose()
                 return Ok ()
         }
+
+    member private self.ForceCloseUsingCommitmentTx
+        (commitmentTxString: string)
+        (channelId: ChannelIdentifier)
+        : Async<string> =
+        async {
+            let account = self.Account :> IAccount
+            let currency = account.Currency
+            let serializedChannel = self.ChannelStore.LoadChannel channelId
+            let! spendingTransaction = async {
+                let network =
+                    UtxoCoin.Account.GetNetwork currency
+                let commitmentTx =
+                    Transaction.Parse(commitmentTxString, network)
+                let commitments =
+                    serializedChannel.Commitments
+                let channelPrivKeys =
+                    let channelIndex = serializedChannel.ChannelIndex
+                    let nodeMasterPrivKey = self.NodeMasterPrivKey
+                    nodeMasterPrivKey.ChannelPrivKeys channelIndex
+                let targetAddress =
+                    let originAddress = account.PublicAddress
+                    BitcoinAddress.Create(originAddress, network)
+                let! feeRate = async {
+                    let! feeEstimator = FeeEstimator.Create currency
+                    return feeEstimator.FeeRatePerKw
+                }
+                let spendingTransactionOpt =
+                    ForceCloseFundsRecovery.tryGetFundsFromLocalCommitmentTx
+                        commitments.LocalParams
+                        commitments.RemoteParams
+                        commitments.FundingScriptCoin
+                        channelPrivKeys
+                        network
+                        commitmentTx
+                let transactionBuilder =
+                    UnwrapOption
+                        spendingTransactionOpt
+                            "Failed to get funds from our own commitment tx! This is a bug."
+                transactionBuilder.SendAll targetAddress |> ignore
+                let fee = transactionBuilder.EstimateFees (feeRate.AsNBitcoinFeeRate())
+                transactionBuilder.SendFees fee |> ignore
+                return transactionBuilder.BuildTransaction true
+            }
+            return spendingTransaction.ToHex()
+        }
+
+    member self.ForceCloseChannel
+        (channelId: ChannelIdentifier)
+        : Async<string> =
+        async {
+            let commitmentTxString = self.ChannelStore.GetCommitmentTx channelId
+            let serializedChannel = self.ChannelStore.LoadChannel channelId
+            let! spendingTxString = self.ForceCloseUsingCommitmentTx commitmentTxString channelId
+            let currency =
+                let account = self.Account :> IAccount
+                account.Currency
+            let! forceCloseTxId = UtxoCoin.Account.BroadcastRawTransaction currency commitmentTxString
+            let newSerializedChannel = {
+                serializedChannel with
+                    LocalForceCloseSpendingTxOpt = Some spendingTxString
+            }
+            self.ChannelStore.SaveChannel newSerializedChannel
+            return forceCloseTxId
+        }
+
 
 type NodeServer internal (nodeClient: NodeClient, transportListener: TransportListener) =
     member val NodeClient = nodeClient
