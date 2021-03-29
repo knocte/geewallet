@@ -387,6 +387,35 @@ module LayerTwo =
                 }
         }
 
+    let ClaimFundsIfTimelockExpired
+        (channelStore: ChannelStore)
+        (channelInfo: ChannelInfo)
+        (locallyForceClosedData: LocallyForceClosedData)
+        : Async<seq<string>> =
+        async {
+            let! remainingConfirmations = locallyForceClosedData.GetRemainingConfirmations()
+            if remainingConfirmations = 0us then
+                let! txId =
+                    UtxoCoin.Account.BroadcastRawTransaction
+                        locallyForceClosedData.Currency
+                        locallyForceClosedData.SpendingTransactionString
+                channelStore.DeleteChannel channelInfo.ChannelId
+                return seq {
+                    yield! UserInteraction.DisplayLightningChannelStatus channelInfo
+                    yield sprintf "        channel force-closed"
+                    yield sprintf "        funds have been recovered and returned to the wallet"
+                    yield sprintf "        txid of recovery transaction is %s" txId
+                }
+            else
+                return seq {
+                    yield! UserInteraction.DisplayLightningChannelStatus channelInfo
+                    yield sprintf "        channel force-closed"
+                    yield sprintf
+                        "        waiting for %i more confirmations before funds are recovered"
+                        remainingConfirmations
+                }
+        }
+
     let GetChannelStatuses (accounts: seq<IAccount>): seq<Async<Async<seq<string>>>> =
         seq {
             let normalUtxoAccounts = accounts.OfType<UtxoCoin.NormalUtxoAccount>()
@@ -441,7 +470,14 @@ module LayerTwo =
                                         return Seq.empty
                                 }
                             }
-                    | ChannelStatus.LocallyForceClosed _
+                    | ChannelStatus.LocallyForceClosed locallyForceClosedData ->
+                        yield async {
+                            return
+                                ClaimFundsIfTimelockExpired
+                                    channelStore
+                                    channelInfo
+                                    locallyForceClosedData
+                        }
                     | ChannelStatus.Closed ->
                         ()
         }
