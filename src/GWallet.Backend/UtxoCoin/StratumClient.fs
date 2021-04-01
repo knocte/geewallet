@@ -196,11 +196,93 @@ type public ElectrumServerReturningInternalErrorException(message: string, code:
                                                           originalRequest: string, originalResponse: string) =
     inherit ElectrumServerReturningErrorException(message, code, originalRequest, originalResponse)
 
-type StratumClient (jsonRpcClient: JsonRpcTcpClient) =
+module StratumRequestSerializer =
 
-    let Serialize(req: Request): string =
+    let private Serialize(req: Request): string =
         JsonConvert.SerializeObject(req, Formatting.None,
                                     Marshalling.PascalCase2LowercasePlusUnderscoreConversionSettings)
+
+    let BlockchainScriptHashGetBalance (address: string): string =
+        let req = {
+            Id = 0
+            Method = "blockchain.scripthash.get_balance"
+            Params = address :: List.Empty
+        }
+        Serialize req
+
+    let ServerVersion (clientName: string) (protocolVersion: Version): string =
+        let req = {
+            Id = 0
+            Method = "server.version"
+            Params = [clientName; protocolVersion.ToString()]
+        }
+        Serialize req
+
+    let BlockchainScriptHashListUnspent (address: string): string =
+        let req = {
+            Id = 0
+            Method = "blockchain.scripthash.listunspent"
+            Params = address :: List.Empty
+        }
+        Serialize req
+
+    let BlockchainScriptHashHistory (scriptHash: string): string =
+        let req = {
+            Id = 0
+            Method = "blockchain.scripthash.get_history"
+            Params = scriptHash :: List.Empty
+        }
+        Serialize req
+
+    let BlockchainScriptHashMerkle (txHash: string) height: string =
+        let req = {
+            Id = 0
+            Method = "blockchain.transaction.get_merkle"
+            Params = Map.ofList ["tx_hash", txHash :> obj; "height", height :> obj]
+        }
+        Serialize req
+
+    let BlockchainTransactionGet (txHash: string): string=
+        let req = {
+            Id = 0
+            Method = "blockchain.transaction.get"
+            Params = txHash :: List.Empty
+        }
+        Serialize req
+
+    let BlockchainTransactionGetVerbose (txHash: string): string =
+        let req = {
+            Id = 0
+            Method = "blockchain.transaction.get"
+            Params = Map.ofList ["tx_hash", txHash :> obj; "verbose", true :> obj]
+        }
+        Serialize req
+
+    let BlockchainEstimateFee (numBlocksTarget: int): string =
+        let req = {
+            Id = 0;
+            Method = "blockchain.estimatefee";
+            Params = numBlocksTarget :: List.Empty
+        }
+        Serialize req
+
+    let BlockchainTransactionBroadcast (txInHex: string): string =
+        let req = {
+            Id = 0
+            Method = "blockchain.transaction.broadcast"
+            Params = txInHex :: List.Empty
+        }
+        Serialize req
+
+    let BlockchainHeadersSubscribe (): string =
+        let req = {
+            Id = 0
+            Method = "blockchain.headers.subscribe"
+            Params = List.Empty
+        }
+        Serialize req
+
+type StratumClient (jsonRpcClient: JsonRpcTcpClient) =
 
     // FIXME: should we rather use JContainer.Parse? it seems JObject.Parse wouldn't detect error in this: {A:{"B": 1}}
     //        (for more info see replies of https://stackoverflow.com/questions/6903477/need-a-string-json-validator )
@@ -282,12 +364,7 @@ type StratumClient (jsonRpcClient: JsonRpcTcpClient) =
             StratumClient.DeserializeInternal result
 
     member self.BlockchainScriptHashGetBalance address: Async<BlockchainScriptHashGetBalanceResult> =
-        let obj = {
-            Id = 0;
-            Method = "blockchain.scripthash.get_balance";
-            Params = [address]
-        }
-        let json = Serialize obj
+        let json = StratumRequestSerializer.BlockchainScriptHashGetBalance address
 
         async {
             let! resObj,_ = self.Request<BlockchainScriptHashGetBalanceResult> json
@@ -306,15 +383,11 @@ type StratumClient (jsonRpcClient: JsonRpcTcpClient) =
         | exn -> raise(Exception("Electrum Server's version disliked by .NET Version class: " + versionStr, exn))
 
     member self.ServerVersion (clientName: string) (protocolVersion: Version): Async<Version> = async {
-        let obj = {
-            Id = 0;
-            Method = "server.version";
-            Params = [clientName; protocolVersion.ToString()]
-        }
         // this below serializes to:
         //  (SPrintF2 "{ \"id\": 0, \"method\": \"server.version\", \"params\": [ \"%s\", \"%s\" ] }"
         //      CURRENT_ELECTRUM_FAKED_VERSION PROTOCOL_VERSION)
-        let json = Serialize obj
+        let json = StratumRequestSerializer.ServerVersion clientName protocolVersion
+
         let! resObj, rawResponse = self.Request<ServerVersionResult> json
 
         if Object.ReferenceEquals (resObj, null) then
@@ -331,60 +404,35 @@ type StratumClient (jsonRpcClient: JsonRpcTcpClient) =
     }
 
     member self.BlockchainScriptHashListUnspent address: Async<BlockchainScriptHashListUnspentResult> =
-        let obj = {
-            Id = 0;
-            Method = "blockchain.scripthash.listunspent";
-            Params = [address]
-        }
-        let json = Serialize obj
+        let json = StratumRequestSerializer.BlockchainScriptHashListUnspent address
         async {
             let! resObj,_ = self.Request<BlockchainScriptHashListUnspentResult> json
             return resObj
         }
 
     member self.BlockchainScriptHashHistory scriptHash: Async<BlockchainScriptHashHistoryResult> =
-        let obj = {
-            Id = 0
-            Method = "blockchain.scripthash.get_history"
-            Params = scriptHash :: List.Empty
-        }
-        let json = Serialize obj
+        let json = StratumRequestSerializer.BlockchainScriptHashHistory scriptHash
         async {
             let! resObj,_ = self.Request<BlockchainScriptHashHistoryResult> json
             return resObj
         }
 
     member self.BlockchainScriptHashMerkle txHash height: Async<BlockchainScriptHashMerkleResult> =
-        let obj = {
-            Id = 0;
-            Method = "blockchain.transaction.get_merkle";
-            Params = Map.ofList ["tx_hash", txHash :> obj; "height", height :> obj]
-        }
-        let json = Serialize obj
+        let json = StratumRequestSerializer.BlockchainScriptHashMerkle txHash height
         async {
             let! resObj,_ = self.Request<BlockchainScriptHashMerkleResult> json
             return resObj
         }
 
     member self.BlockchainTransactionGet txHash: Async<BlockchainTransactionGetResult> =
-        let obj = {
-            Id = 0;
-            Method = "blockchain.transaction.get";
-            Params = [txHash]
-        }
-        let json = Serialize obj
+        let json = StratumRequestSerializer.BlockchainTransactionGet txHash
         async {
             let! resObj,_ = self.Request<BlockchainTransactionGetResult> json
             return resObj
         }
 
     member self.BlockchainTransactionGetVerbose (txHash: string): Async<BlockchainTransactionGetVerboseResult> =
-        let obj = {
-            Id = 0
-            Method = "blockchain.transaction.get"
-            Params = Map.ofList ["tx_hash", txHash :> obj; "verbose", true :> obj]
-        }
-        let json = Serialize obj
+        let json = StratumRequestSerializer.BlockchainTransactionGetVerbose txHash
         async {
             let! resObj,_ = self.Request<BlockchainTransactionGetVerboseResult> json
             return resObj
@@ -393,12 +441,7 @@ type StratumClient (jsonRpcClient: JsonRpcTcpClient) =
     // NOTE: despite Electrum-X official docs claiming that this method is deprecated... it's not! go read the official
     //       non-shitcoin forked version of the docs: https://electrumx-spesmilo.readthedocs.io/en/latest/protocol-methods.html#blockchain-estimatefee
     member self.BlockchainEstimateFee (numBlocksTarget: int): Async<BlockchainEstimateFeeResult> =
-        let obj = {
-            Id = 0;
-            Method = "blockchain.estimatefee";
-            Params = [numBlocksTarget]
-        }
-        let json = Serialize obj
+        let json = StratumRequestSerializer.BlockchainEstimateFee numBlocksTarget
 
         async {
             let! resObj,_ = self.Request<BlockchainEstimateFeeResult> json
@@ -406,12 +449,7 @@ type StratumClient (jsonRpcClient: JsonRpcTcpClient) =
         }
 
     member self.BlockchainTransactionBroadcast txInHex: Async<BlockchainTransactionBroadcastResult> =
-        let obj = {
-            Id = 0;
-            Method = "blockchain.transaction.broadcast";
-            Params = [txInHex]
-        }
-        let json = Serialize obj
+        let json = StratumRequestSerializer.BlockchainTransactionBroadcast txInHex
 
         async {
             let! resObj,_ = self.Request<BlockchainTransactionBroadcastResult> json
@@ -419,12 +457,7 @@ type StratumClient (jsonRpcClient: JsonRpcTcpClient) =
         }
 
     member self.BlockchainHeadersSubscribe (): Async<BlockchainHeadersSubscribeResult> =
-        let obj = {
-            Id = 0
-            Method = "blockchain.headers.subscribe"
-            Params = List.Empty
-        }
-        let json = Serialize obj
+        let json = StratumRequestSerializer.BlockchainHeadersSubscribe ()
 
         async {
             let! resObj,_ = self.Request<BlockchainHeadersSubscribeResult> json

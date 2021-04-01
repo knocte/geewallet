@@ -42,3 +42,21 @@ type StratumParsing() =
             |> ignore<BlockchainScriptHashGetBalanceResult>
         )
         Assert.That(ex.ErrorCode, Is.EqualTo(-32603))
+
+    [<Test>]
+    member __.``blockchain.transaction.get(verbose) request serialization``() =
+        let dummyHash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        let json = StratumRequestSerializer.BlockchainTransactionGetVerbose dummyHash
+        Assert.That (
+            json,
+            Is.EqualTo "{\"id\":0,\"method\":\"blockchain.transaction.get\",\"params\":{\"tx_hash\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"verbose\":true}}"
+        )
+
+    [<Test>]
+    member __.``blockchain.transaction.get_merkle request serialization``() =
+        let dummyHash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        let json = StratumRequestSerializer.BlockchainScriptHashMerkle dummyHash
+        Assert.That (
+            json,
+            Is.EqualTo "{\"id\":0,\"method\":\"blockchain.transaction.get_merkle\",\"params\":{\"height\":null,\"tx_hash\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"}}"
+        )
