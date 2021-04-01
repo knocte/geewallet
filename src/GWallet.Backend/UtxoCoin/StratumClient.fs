@@ -238,7 +238,7 @@ module StratumRequestSerializer =
         let req = {
             Id = 0
             Method = "blockchain.transaction.get_merkle"
-            Params = Map.ofList ["tx_hash", txHash :> obj; "height", height :> obj]
+            Params = [txHash :> obj; height :> obj]
         }
         Serialize req
 
@@ -254,7 +254,7 @@ module StratumRequestSerializer =
         let req = {
             Id = 0
             Method = "blockchain.transaction.get"
-            Params = Map.ofList ["tx_hash", txHash :> obj; "verbose", true :> obj]
+            Params = [txHash :> obj; true :> obj]
         }
         Serialize req
 
