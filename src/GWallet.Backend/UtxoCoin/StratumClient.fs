@@ -125,6 +125,13 @@ type ErrorResult =
         Error: ErrorInnerResult;
     }
 
+// we can delete this workaround below when this bug is fixed: https://github.com/romanz/electrs/issues/313
+type BuggyElectrsErrorResult =
+    {
+        Id: int
+        Error: string
+    }
+
 type RpcErrorCode =
     // see https://gitlab.com/nblockchain/geewallet/issues/110
     | ExcessiveResourceUsage = -101
@@ -141,11 +148,14 @@ type RpcErrorCode =
 type public ElectrumServerReturningImproperJsonResponseException(message: string, innerEx: Exception) =
     inherit ServerMisconfiguredException (message, innerEx)
 
-type public ElectrumServerReturningErrorInJsonResponseException(message: string, code: int) =
+type public ElectrumServerReturningErrorInJsonResponseException(message: string, code: Option<int>) =
     inherit CommunicationUnsuccessfulException(message)
 
-    member val ErrorCode: int =
+    member val ErrorCode: Option<int> =
         code with get
+
+    // let's only use this property for the sake of a workaround for this: https://github.com/romanz/electrs/issues/313
+    member internal __.ErrorMessage: string = message
 
     member __.InternalErrors(): seq<ElectrumServerReturningErrorInJsonResponseException> =
         let rec searchForOpenBracketFrom(openSearchIndex: int) = seq {
@@ -175,14 +185,14 @@ type public ElectrumServerReturningErrorInJsonResponseException(message: string,
                             Marshalling.PascalCase2LowercasePlusUnderscoreConversionSettings
                         )
                     if (not (Object.ReferenceEquals(maybeError, null))) then
-                        Some <| ElectrumServerReturningErrorInJsonResponseException(maybeError.Message, maybeError.Code)
+                        Some <| ElectrumServerReturningErrorInJsonResponseException(maybeError.Message, Some maybeError.Code)
                     else
                         None
                 with
                 | ex -> None
         )
 
-type public ElectrumServerReturningErrorException(message: string, code: int,
+type public ElectrumServerReturningErrorException(message: string, code: Option<int>,
                                                   originalRequest: string, originalResponse: string) =
     inherit ElectrumServerReturningErrorInJsonResponseException(message, code)
 
@@ -194,7 +204,7 @@ type public ElectrumServerReturningErrorException(message: string, code: int,
 
 type public ElectrumServerReturningInternalErrorException(message: string, code: int,
                                                           originalRequest: string, originalResponse: string) =
-    inherit ElectrumServerReturningErrorException(message, code, originalRequest, originalResponse)
+    inherit ElectrumServerReturningErrorException(message, Some code, originalRequest, originalResponse)
 
 module StratumRequestSerializer =
 
@@ -308,20 +318,48 @@ type StratumClient (jsonRpcClient: JsonRpcTcpClient) =
             return (StratumClient.Deserialize<'R> rawResponse, rawResponse)
         with
         | :? ElectrumServerReturningErrorInJsonResponseException as ex ->
-            if ex.ErrorCode = int RpcErrorCode.InternalError then
-                return raise(ElectrumServerReturningInternalErrorException(ex.Message, ex.ErrorCode, jsonRequest, rawResponse))
-            if ex.ErrorCode = int RpcErrorCode.UnknownMethod then
+            match ex.ErrorCode with
+            | Some errorCode when errorCode = int RpcErrorCode.InternalError ->
+                return raise
+                <| ElectrumServerReturningInternalErrorException(ex.Message, errorCode, jsonRequest, rawResponse)
+            | Some errorCode when errorCode = int RpcErrorCode.UnknownMethod ->
                 return raise <| ServerMisconfiguredException(ex.Message, ex)
-            if ex.ErrorCode = int RpcErrorCode.ServerBusy then
+            | Some errorCode when errorCode = int RpcErrorCode.ServerBusy ->
                 return raise <| ServerUnavailabilityException(ex.Message, ex)
-            if ex.ErrorCode = int RpcErrorCode.ExcessiveResourceUsage then
+            | Some errorCode when errorCode = int RpcErrorCode.ExcessiveResourceUsage ->
                 return raise <| ServerUnavailabilityException(ex.Message, ex)
-
-            return raise(ElectrumServerReturningErrorException(ex.Message, ex.ErrorCode, jsonRequest, rawResponse))
+            | Some errorCode ->
+                return raise
+                <| ElectrumServerReturningErrorException(ex.Message, Some errorCode, jsonRequest, rawResponse)
+            | None ->
+                return raise
+                <| ElectrumServerReturningErrorException(ex.Message, None, jsonRequest, rawResponse)
     }
 
-    static member private DeserializeInternal<'T> (result: string): 'T =
-        let resultTrimmed = result.Trim()
+    static member private MaybeDeserializeToErrorAndThrow<'T> (resultTrimmed: string): unit =
+        // we can delete this if block below when this bug is fixed: https://github.com/romanz/electrs/issues/313
+        if typeof<'T> = typeof<BlockchainTransactionGetVerboseResult> then
+            let maybeBuggyError =
+                try
+                    let deserializedObj =
+                        JsonConvert.DeserializeObject<BuggyElectrsErrorResult> (
+                            resultTrimmed,
+                            Marshalling.PascalCase2LowercasePlusUnderscoreConversionSettings
+                        )
+                    if Object.ReferenceEquals(null, deserializedObj) || String.IsNullOrEmpty deserializedObj.Error then
+                        None
+                    else
+                        Some deserializedObj
+                with
+                | :? Newtonsoft.Json.JsonException ->
+                    None
+
+            match maybeBuggyError with
+            | None -> ()
+            | Some error ->
+                raise
+                <| ElectrumServerReturningErrorInJsonResponseException(error.Error, None)
+
         let maybeError =
             try
                 JsonConvert.DeserializeObject<ErrorResult>(resultTrimmed,
@@ -331,7 +369,14 @@ type StratumClient (jsonRpcClient: JsonRpcTcpClient) =
                                                resultTrimmed typedefof<'T>.FullName, ex)
 
         if (not (Object.ReferenceEquals(maybeError, null))) && (not (Object.ReferenceEquals(maybeError.Error, null))) then
-            raise(ElectrumServerReturningErrorInJsonResponseException(maybeError.Error.Message, maybeError.Error.Code))
+            raise
+            <| ElectrumServerReturningErrorInJsonResponseException(maybeError.Error.Message, Some maybeError.Error.Code)
+
+
+    static member private DeserializeInternal<'T> (result: string): 'T =
+        let resultTrimmed = result.Trim()
+
+        StratumClient.MaybeDeserializeToErrorAndThrow<'T> resultTrimmed
 
         let failedDeserMsg = SPrintF2 "Failed deserializing JSON response '%s' to type '%s'"
                                       resultTrimmed typedefof<'T>.FullName
