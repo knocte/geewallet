@@ -338,6 +338,7 @@ type StratumClient (jsonRpcClient: JsonRpcTcpClient) =
 
     static member private MaybeDeserializeToErrorAndThrow<'T> (resultTrimmed: string): unit =
         // we can delete this if block below when this bug is fixed: https://github.com/romanz/electrs/issues/313
+        // FIXME: should we do it for any 'T? see https://gitlab.com/nblockchain/geewallet/-/jobs/1156866360 or https://gitlab.com/nblockchain/geewallet/-/jobs/1158282261
         if typeof<'T> = typeof<BlockchainTransactionGetVerboseResult> then
             let maybeBuggyError =
                 try
