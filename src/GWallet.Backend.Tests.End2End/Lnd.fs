@@ -143,7 +143,16 @@ type Lnd = {
                 let unstringified = PubKey stringified
                 unstringified
             NodeInfo (pubKey, nodeEndPoint.IPEndPoint.Address.ToString(), nodeEndPoint.IPEndPoint.Port)
-        (Async.AwaitTask: Task -> Async<unit>) <| (client :> ILightningClient).ConnectTo nodeInfo
+        async {
+            let! connResult =
+                (client :> ILightningClient).ConnectTo nodeInfo
+                |> Async.AwaitTask
+            match connResult with
+            | ConnectionResult.CouldNotConnect ->
+                return failwith "could not connect"
+            | _ ->
+                return ()
+        }
 
     member self.OpenChannel (nodeEndPoint: NodeEndPoint)
                             (amount: Money)
