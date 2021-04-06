@@ -613,7 +613,8 @@ type LN() =
         if Money(channelInfoAfterPayment1.Balance, MoneyUnit.BTC) <> fundingAmount - walletToWalletTestPayment1Amount - walletToWalletTestPayment2Amount then
             failwith "incorrect balance after payment 1"
 
-        let! _forceCloseTxId = Lightning.Network.ForceCloseChannel clientWallet.NodeClient channelId
+        let! _forceCloseTxId =
+            (Node.Client clientWallet.NodeClient).ForceCloseChannel clientWallet.ChannelStore channelId
 
         let locallyForceClosedData =
             match (clientWallet.ChannelStore.ChannelInfo channelId).Status with

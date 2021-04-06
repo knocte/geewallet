@@ -92,6 +92,7 @@ module FSharpUtil =
 
     type IErrorMsg =
         abstract member Message: string
+        abstract member ChannelBreakdown: bool
 
     let UnwrapResult<'TRes, 'TError> (result: Result<'TRes, 'TError>)
                                      (msg: string)

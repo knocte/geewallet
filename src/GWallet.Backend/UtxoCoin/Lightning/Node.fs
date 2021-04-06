@@ -26,6 +26,8 @@ type internal NodeOpenChannelError =
                 SPrintF1 "error connecting: %s" (connectError :> IErrorMsg).Message
             | OpenChannel openChannelError ->
                 SPrintF1 "error opening channel: %s" (openChannelError :> IErrorMsg).Message
+        member __.ChannelBreakdown: bool =
+            false
 
 type internal NodeAcceptChannelError =
     | AcceptPeer of ConnectError
@@ -37,6 +39,8 @@ type internal NodeAcceptChannelError =
                 SPrintF1 "error accepting connection: %s" (connectError :> IErrorMsg).Message
             | AcceptChannel acceptChannelError ->
                 SPrintF1 "error accepting channel: %s" (acceptChannelError :> IErrorMsg).Message
+        member __.ChannelBreakdown: bool =
+            false
 
 type internal NodeSendMonoHopPaymentError =
     | Reconnect of ReconnectActiveChannelError
@@ -49,6 +53,12 @@ type internal NodeSendMonoHopPaymentError =
             | SendPayment sendMonoHopPaymentError ->
                 SPrintF1 "error sending payment on reconnected channel: %s"
                          (sendMonoHopPaymentError :> IErrorMsg).Message
+        member self.ChannelBreakdown: bool =
+            match self with
+            | Reconnect reconnectActiveChannelError ->
+                (reconnectActiveChannelError :> IErrorMsg).ChannelBreakdown
+            | SendPayment sendMonoHopPaymentError ->
+                (sendMonoHopPaymentError :> IErrorMsg).ChannelBreakdown
 
 type internal NodeReceiveMonoHopPaymentError =
     | Reconnect of ReconnectActiveChannelError
@@ -61,6 +71,12 @@ type internal NodeReceiveMonoHopPaymentError =
             | ReceivePayment recvMonoHopPaymentError ->
                 SPrintF1 "error receiving payment on reconnected channel: %s"
                          (recvMonoHopPaymentError :> IErrorMsg).Message
+        member self.ChannelBreakdown: bool =
+            match self with
+            | Reconnect reconnectActiveChannelError ->
+                (reconnectActiveChannelError :> IErrorMsg).ChannelBreakdown
+            | ReceivePayment recvMonoHopPaymentError ->
+                (recvMonoHopPaymentError :> IErrorMsg).ChannelBreakdown
 
 type NodeInitiateCloseChannelError =
     | Reconnect of IErrorMsg
@@ -76,6 +92,13 @@ type NodeInitiateCloseChannelError =
                 SPrintF1
                     "error initiating channel-closing on reconnected channel: %s"
                     closeChannelError.Message
+        member self.ChannelBreakdown: bool =
+            match self with
+            | Reconnect reconnectActiveChannelError ->
+                reconnectActiveChannelError.ChannelBreakdown
+            | InitiateCloseChannel closeChannelError ->
+                closeChannelError.ChannelBreakdown
+
 type internal NodeAcceptCloseChannelError =
     | Reconnect of ReconnectActiveChannelError
     | AcceptCloseChannel of CloseChannelError
@@ -87,6 +110,12 @@ type internal NodeAcceptCloseChannelError =
             | AcceptCloseChannel acceptCloseChannelError ->
                 SPrintF1 "error accepting channel close on reconnected channel: %s"
                          (acceptCloseChannelError :> IErrorMsg).Message
+        member self.ChannelBreakdown: bool =
+            match self with
+            | Reconnect reconnectActiveChannelError ->
+                (reconnectActiveChannelError :> IErrorMsg).ChannelBreakdown
+            | AcceptCloseChannel acceptCloseChannelError ->
+                (acceptCloseChannelError :> IErrorMsg).ChannelBreakdown
 
 type internal NodeReceiveLightningEventError =
     | Reconnect of ReconnectActiveChannelError
@@ -95,6 +124,10 @@ type internal NodeReceiveLightningEventError =
             match self with
             | Reconnect reconnectActiveChannelError ->
                 SPrintF1 "error reconnecting channel: %s" (reconnectActiveChannelError :> IErrorMsg).Message
+        member self.ChannelBreakdown: bool =
+            match self with
+            | Reconnect reconnectActiveChannelError ->
+                (reconnectActiveChannelError :> IErrorMsg).ChannelBreakdown
 
 type IChannelToBeOpened =
     abstract member ConfirmationsRequired: uint32 with get
@@ -259,71 +292,6 @@ type NodeClient internal (channelStore: ChannelStore, nodeMasterPrivKey: NodeMas
             | Ok activeChannel ->
                 (activeChannel :> IDisposable).Dispose()
                 return Ok ()
-        }
-
-    member private self.ForceCloseUsingCommitmentTx
-        (commitmentTxString: string)
-        (channelId: ChannelIdentifier)
-        : Async<string> =
-        async {
-            let account = self.Account :> IAccount
-            let currency = account.Currency
-            let serializedChannel = self.ChannelStore.LoadChannel channelId
-            let! spendingTransaction = async {
-                let network =
-                    UtxoCoin.Account.GetNetwork currency
-                let commitmentTx =
-                    Transaction.Parse(commitmentTxString, network)
-                let commitments =
-                    serializedChannel.Commitments
-                let channelPrivKeys =
-                    let channelIndex = serializedChannel.ChannelIndex
-                    let nodeMasterPrivKey = self.NodeMasterPrivKey
-                    nodeMasterPrivKey.ChannelPrivKeys channelIndex
-                let targetAddress =
-                    let originAddress = account.PublicAddress
-                    BitcoinAddress.Create(originAddress, network)
-                let! feeRate = async {
-                    let! feeEstimator = FeeEstimator.Create currency
-                    return feeEstimator.FeeRatePerKw
-                }
-                let spendingTransactionOpt =
-                    ForceCloseFundsRecovery.tryGetFundsFromLocalCommitmentTx
-                        commitments.LocalParams
-                        commitments.RemoteParams
-                        commitments.FundingScriptCoin
-                        channelPrivKeys
-                        network
-                        commitmentTx
-                let transactionBuilder =
-                    UnwrapOption
-                        spendingTransactionOpt
-                            "Failed to get funds from our own commitment tx! This is a bug."
-                transactionBuilder.SendAll targetAddress |> ignore
-                let fee = transactionBuilder.EstimateFees (feeRate.AsNBitcoinFeeRate())
-                transactionBuilder.SendFees fee |> ignore
-                return transactionBuilder.BuildTransaction true
-            }
-            return spendingTransaction.ToHex()
-        }
-
-    member self.ForceCloseChannel
-        (channelId: ChannelIdentifier)
-        : Async<string> =
-        async {
-            let commitmentTxString = self.ChannelStore.GetCommitmentTx channelId
-            let serializedChannel = self.ChannelStore.LoadChannel channelId
-            let! spendingTxString = self.ForceCloseUsingCommitmentTx commitmentTxString channelId
-            let currency =
-                let account = self.Account :> IAccount
-                account.Currency
-            let! forceCloseTxId = UtxoCoin.Account.BroadcastRawTransaction currency commitmentTxString
-            let newSerializedChannel = {
-                serializedChannel with
-                    LocalForceCloseSpendingTxOpt = Some spendingTxString
-            }
-            self.ChannelStore.SaveChannel newSerializedChannel
-            return forceCloseTxId
         }
 
 
@@ -554,6 +522,73 @@ type NodeServer internal (channelStore: ChannelStore, transportListener: Transpo
             return Error <| (NodeReceiveLightningEventError.Reconnect reconnectActiveChannelError :> IErrorMsg)
         | Ok activeChannel -> return! receiveEvent activeChannel
     }
+
+type Node =
+    | Client of NodeClient
+    | Server of NodeServer
+    member self.ForceCloseChannel
+        (channelStore: ChannelStore)
+        (channelId: ChannelIdentifier)
+        : Async<string> =
+        let account, nodeMasterPrivKey =
+            match self with
+            | Client nodeClient -> nodeClient.Account :> IAccount, nodeClient.NodeMasterPrivKey
+            | Server nodeServer -> nodeServer.Account :> IAccount, nodeServer.NodeMasterPrivKey
+
+        let currency = account.Currency
+        let forceCloseUsingCommitmentTx
+            (commitmentTxString: string)
+            : Async<string> =
+            async {
+                let serializedChannel = channelStore.LoadChannel channelId
+                let! spendingTransaction = async {
+                    let network =
+                        UtxoCoin.Account.GetNetwork currency
+                    let commitmentTx =
+                        Transaction.Parse(commitmentTxString, network)
+                    let commitments =
+                        serializedChannel.Commitments
+                    let channelPrivKeys =
+                        let channelIndex = serializedChannel.ChannelIndex
+                        nodeMasterPrivKey.ChannelPrivKeys channelIndex
+                    let targetAddress =
+                        let originAddress = account.PublicAddress
+                        BitcoinAddress.Create(originAddress, network)
+                    let! feeRate = async {
+                        let! feeEstimator = FeeEstimator.Create currency
+                        return feeEstimator.FeeRatePerKw
+                    }
+                    let spendingTransactionOpt =
+                        ForceCloseFundsRecovery.tryGetFundsFromLocalCommitmentTx
+                            commitments.LocalParams
+                            commitments.RemoteParams
+                            commitments.FundingScriptCoin
+                            channelPrivKeys
+                            network
+                            commitmentTx
+                    let transactionBuilder =
+                        UnwrapOption
+                            spendingTransactionOpt
+                                "Failed to get funds from our own commitment tx! This is a bug."
+                    transactionBuilder.SendAll targetAddress |> ignore
+                    let fee = transactionBuilder.EstimateFees (feeRate.AsNBitcoinFeeRate())
+                    transactionBuilder.SendFees fee |> ignore
+                    return transactionBuilder.BuildTransaction true
+                }
+                return spendingTransaction.ToHex()
+            }
+        async {
+            let commitmentTxString = channelStore.GetCommitmentTx channelId
+            let serializedChannel = channelStore.LoadChannel channelId
+            let! spendingTxString = forceCloseUsingCommitmentTx commitmentTxString
+            let! forceCloseTxId = UtxoCoin.Account.BroadcastRawTransaction currency commitmentTxString
+            let newSerializedChannel = {
+                serializedChannel with
+                    LocalForceCloseSpendingTxOpt = Some spendingTxString
+            }
+            channelStore.SaveChannel newSerializedChannel
+            return forceCloseTxId
+        }
 
 module public Connection =
     let public StartClient (channelStore: ChannelStore)

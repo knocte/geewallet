@@ -113,6 +113,19 @@ module LayerTwo =
                 Console.WriteLine "Invalid option"
                 AskChannelId channelStore isFunderOpt
 
+    let MaybeForceCloseChannel
+        (node: Node)
+        (account)
+        (channelId: ChannelIdentifier)
+        (error: IErrorMsg)
+        : Async<unit> =
+            async {
+                if error.ChannelBreakdown then
+                    let channelStore = ChannelStore account
+                    let! forceCloseTxId = node.ForceCloseChannel channelStore channelId
+                    Console.WriteLine(sprintf "Channel %s force-closed. txid == %s" (ChannelId.ToString channelId) forceCloseTxId)
+            }
+
     let OpenChannel(): Async<unit> =
         async {
             let account = AskLightningAccount ()
@@ -189,7 +202,8 @@ module LayerTwo =
                 let! closeRes = Lightning.Network.CloseChannel nodeClient channelId
                 match closeRes with
                 | Error closeError ->
-                    return failwithf "Error closing channel: %s" (closeError :> IErrorMsg).Message
+                    Console.WriteLine(sprintf "Error closing channel: %s" (closeError :> IErrorMsg).Message)
+                    do! MaybeForceCloseChannel (Node.Client nodeClient) account channelId closeError
                 | Ok () ->
                     Console.WriteLine "Channel closed."
                 UserInteraction.PressAnyKeyToContinue()
@@ -236,6 +250,7 @@ module LayerTwo =
                     match paymentRes with
                     | Error nodeSendMonoHopPaymentError ->
                         Console.WriteLine(sprintf "Error sending monohop payment: %s" nodeSendMonoHopPaymentError.Message)
+                        do! MaybeForceCloseChannel (Node.Client nodeClient) account channelId nodeSendMonoHopPaymentError
                     | Ok () ->
                         Console.WriteLine "Payment sent."
                     UserInteraction.PressAnyKeyToContinue()
@@ -257,6 +272,7 @@ module LayerTwo =
                 match receiveLightningEventRes with
                 | Error nodeReceiveLightningEventError ->
                     Console.WriteLine(sprintf "Error receiving lightning event: %s" nodeReceiveLightningEventError.Message)
+                    do! MaybeForceCloseChannel (Node.Server nodeServer) account channelId nodeReceiveLightningEventError
                 | Ok msg ->
                     match msg with
                     | IncomingChannelEvent.MonoHopUnidirectionalPayment ->
@@ -270,6 +286,22 @@ module LayerTwo =
                     (channelInfo: ChannelInfo)
                         : Async<seq<string>> =
         let channelId = channelInfo.ChannelId
+
+        let lockChannelInternal (node: Node) (subLockFundingAsync: Async<Result<_, IErrorMsg>>): Async<seq<string>> =
+            async {
+                let! lockFundingRes = subLockFundingAsync
+                match lockFundingRes with
+                | Error lockFundingError ->
+                    Console.WriteLine(sprintf "Error reestablishing channel: %s" lockFundingError.Message)
+                    do! MaybeForceCloseChannel node channelStore.Account channelId lockFundingError
+                | Ok () ->
+                    Console.WriteLine(sprintf "funding locked for channel %s" (ChannelId.ToString channelId))
+                return seq {
+                    yield! UserInteraction.DisplayLightningChannelStatus channelInfo
+                    yield "        funding locked - channel is now active"
+                }
+            }
+
         Console.WriteLine(sprintf "Funding for channel %s confirmed" (ChannelId.ToString channelId))
         Console.WriteLine "In order to continue the funding for the channel needs to be locked"
         let lockFundingAsync =
@@ -279,27 +311,22 @@ module LayerTwo =
                     then press any key to continue."
                 Console.ReadKey true |> ignore
                 let password = UserInteraction.AskPassword false
-                let nodeClient = Lightning.Connection.StartClient channelStore password
-                Lightning.Network.ConnectLockChannelFunding nodeClient channelId
+                async {
+                    let nodeClient = Lightning.Connection.StartClient channelStore password
+                    let sublockFundingAsync = Lightning.Network.ConnectLockChannelFunding nodeClient channelId
+                    return! lockChannelInternal (Node.Client nodeClient) sublockFundingAsync
+                }
             else
                 let bindAddress =
                     Console.WriteLine "Listening for connection from peer"
                     AskBindAddress()
                 let password = UserInteraction.AskPassword false
-                use nodeServer = Lightning.Connection.StartServer channelStore password bindAddress
-                Lightning.Network.AcceptLockChannelFunding nodeServer channelId
-        async {
-            let! lockFundingRes = lockFundingAsync
-            match lockFundingRes with
-            | Error lockFundingError ->
-                Console.WriteLine(sprintf "Error reestablishing channel: %s" lockFundingError.Message)
-            | Ok () ->
-                Console.WriteLine(sprintf "funding locked for channel %s" (ChannelId.ToString channelId))
-            return seq {
-                yield! UserInteraction.DisplayLightningChannelStatus channelInfo
-                yield "        funding locked - channel is now active"
-            }
-        }
+                async {
+                    use nodeServer = Lightning.Connection.StartServer channelStore password bindAddress
+                    let sublockFundingAsync = Lightning.Network.AcceptLockChannelFunding nodeServer channelId
+                    return! lockChannelInternal (Node.Server nodeServer) sublockFundingAsync
+                }
+        lockFundingAsync
 
     let LockChannelIfFundingConfirmed (channelStore: ChannelStore)
                                       (channelInfo: ChannelInfo)
