@@ -85,7 +85,7 @@ type LN() =
 
             // Mine blocks on top of the funding transaction to make it confirmed.
             let minimumDepth = BlockHeightOffset32 6u
-            bitcoind.GenerateBlocks minimumDepth serverWallet.Address
+            bitcoind.GenerateBlocksToDummyAddress minimumDepth
 
             do! serverWallet.WaitForFundingConfirmed channelId
 
@@ -135,7 +135,7 @@ type LN() =
             | status -> failwith (SPrintF1 "unexpected channel status. Expected Closing, got %A" status)
 
             // Mine 10 blocks to make sure closing tx is confirmed
-            bitcoind.GenerateBlocks (BlockHeightOffset32 (uint32 10)) clientWallet.Address
+            bitcoind.GenerateBlocksToDummyAddress (BlockHeightOffset32 (uint32 10))
 
             let rec waitForClosingTxConfirmed attempt = async {
                 Infrastructure.LogDebug (SPrintF1 "Checking if closing tx is finished, attempt #%d" attempt)
@@ -385,7 +385,7 @@ type LN() =
         | status -> failwith (SPrintF1 "unexpected channel status. Expected Closing, got %A" status)
 
         // Mine 10 blocks to make sure closing tx is confirmed
-        bitcoind.GenerateBlocks (BlockHeightOffset32 (uint32 10)) clientWallet.Address
+        bitcoind.GenerateBlocksToDummyAddress (BlockHeightOffset32 (uint32 10))
 
         let rec waitForClosingTxConfirmed attempt = async {
             Infrastructure.LogDebug (SPrintF1 "Checking if closing tx is finished, attempt #%d" attempt)
@@ -463,7 +463,7 @@ type LN() =
 
             // Mine blocks on top of the closing transaction to make it confirmed.
             let minimumDepth = BlockHeightOffset32 6u
-            bitcoind.GenerateBlocks minimumDepth serverWallet.Address
+            bitcoind.GenerateBlocksToDummyAddress minimumDepth
             return ()
         }
 
@@ -490,7 +490,7 @@ type LN() =
         bitcoind.GenerateBlocks blocksMinedToLnd lndAddress
 
         let maturityDurationInNumberOfBlocks = BlockHeightOffset32 (uint32 NBitcoin.Consensus.RegTest.CoinbaseMaturity)
-        bitcoind.GenerateBlocks maturityDurationInNumberOfBlocks clientWallet.Address
+        bitcoind.GenerateBlocksToDummyAddress maturityDurationInNumberOfBlocks
 
         // We confirm the one block mined to LND, by waiting for LND to see the chain
         // at a height which has that block matured. The height at which the block will
@@ -522,7 +522,7 @@ type LN() =
         // At that point, the 0.25 regtest coins from the above call to sendcoins
         // are considered arrived to Geewallet.
         let consideredConfirmedAmountOfBlocksPlusOne = BlockHeightOffset32 7u
-        bitcoind.GenerateBlocks consideredConfirmedAmountOfBlocksPlusOne clientWallet.Address
+        bitcoind.GenerateBlocksToDummyAddress consideredConfirmedAmountOfBlocksPlusOne
 
         let fundingAmount = Money(0.1m, MoneyUnit.BTC)
         let! transferAmount = async {
@@ -542,7 +542,7 @@ type LN() =
         let channelId = (pendingChannel :> IChannelToBeOpened).ChannelId
         let! fundingTxIdRes = pendingChannel.Accept()
         let _fundingTxId = UnwrapResult fundingTxIdRes "pendingChannel.Accept failed"
-        bitcoind.GenerateBlocks (BlockHeightOffset32 minimumDepth) clientWallet.Address
+        bitcoind.GenerateBlocksToDummyAddress (BlockHeightOffset32 minimumDepth)
 
         do!
             let channelInfo = clientWallet.ChannelStore.ChannelInfo channelId
@@ -630,12 +630,11 @@ type LN() =
         let! balanceBeforeFundsReclaimed = clientWallet.GetBalance()
 
         // Mine the force-close tx into a block
-        bitcoind.GenerateBlocks (BlockHeightOffset32 1u) lndAddress
+        bitcoind.GenerateBlocksToDummyAddress (BlockHeightOffset32 1u)
 
         // Mine blocks to release time-lock
-        bitcoind.GenerateBlocks
+        bitcoind.GenerateBlocksToDummyAddress
             (BlockHeightOffset32 (uint32 locallyForceClosedData.ToSelfDelay))
-            lndAddress
 
         let! _spendingTxId =
             UtxoCoin.Account.BroadcastRawTransaction
@@ -647,7 +646,7 @@ type LN() =
             do! Async.Sleep 500
 
         // Mine the spending tx into a block
-        bitcoind.GenerateBlocks (BlockHeightOffset32 1u) lndAddress
+        bitcoind.GenerateBlocksToDummyAddress (BlockHeightOffset32 1u)
 
         Infrastructure.LogDebug "waiting for our wallet balance to increase"
         let! _balanceAfterFundsReclaimed =

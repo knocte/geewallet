@@ -36,10 +36,13 @@ type Lnd = {
                 + " --bitcoin.active"
                 + " --bitcoin.regtest"
                 + " --bitcoin.node=bitcoind"
+                + " --bitcoind.dir=" + bitcoind.DataDir
+(* not needed anymore:
                 + " --bitcoind.rpcuser=" + bitcoind.RpcUser
                 + " --bitcoind.rpcpass=" + bitcoind.RpcPassword
                 + " --bitcoind.zmqpubrawblock=tcp://127.0.0.1:28332"
                 + " --bitcoind.zmqpubrawtx=tcp://127.0.0.1:28333"
+*)
                 + " --bitcoind.rpchost=localhost:18554"
                 + " --debuglevel=trace"
                 + " --listen=127.0.0.2"
