@@ -16,9 +16,9 @@ tar -C /usr/local --strip-components 1 -xzf bitcoin-0.20.0-x86_64-linux-gnu.tar.
 
 # Install electrumx
 apt install -y curl unzip python3-pip
-curl -L https://github.com/spesmilo/electrumx/archive/1.15.0.zip -o electrumx-1.15.0.zip
-unzip electrumx-1.15.0.zip
-pip3 install ./electrumx-1.15.0
+curl -L https://github.com/spesmilo/electrumx/archive/1.16.0.zip -o electrumx-1.16.0.zip
+unzip electrumx-1.16.0.zip
+pip3 install ./electrumx-1.16.0
 
 # Install lnd
 apt install -y curl tar gzip unzip make git
