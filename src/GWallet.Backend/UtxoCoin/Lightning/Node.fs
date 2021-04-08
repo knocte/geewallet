@@ -600,6 +600,16 @@ type Node =
             return forceCloseTxId
         }
 
+    member self.CreateRecoveryTxForRemoteForceClose
+        (channelId: ChannelIdentifier)
+        (closingTxId: string)
+        : Async<Option<string>> =
+        async {
+            (channelId, closingTxId)
+            |> ignore<ChannelIdentifier*string>
+            return raise <| NotImplementedException ()
+        }
+
 module public Connection =
     let public StartClient (channelStore: ChannelStore)
                            (password: string)

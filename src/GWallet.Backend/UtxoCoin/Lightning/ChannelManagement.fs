@@ -1,5 +1,6 @@
 ﻿namespace GWallet.Backend.UtxoCoin.Lightning
 
+open System
 open System.IO
 
 open DotNetLightning.Channel
@@ -207,6 +208,12 @@ type ChannelStore(account: NormalUtxoAccount) =
                 "A channel can only end up in the wallet if it has commitments."
         commitments.LocalCommit.PublishableTxs.CommitTx.Value.ToHex()
 
+    member self.CheckForClosingTx (channelId: ChannelIdentifier): Async<Option<string * Option<uint32>>> =
+        async {
+            channelId
+            |> ignore<ChannelIdentifier>
+            return raise <| NotImplementedException ()
+        }
 
 module ChannelManager =
     // difference from fee estimation in UtxoCoinAccount.fs: this is for P2WSH
