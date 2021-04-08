@@ -120,8 +120,7 @@ module LayerTwo =
         (channelId: ChannelIdentifier)
         : Async<unit> =
         async {
-            let channelStore = ChannelStore account
-            let! forceCloseTxId = node.ForceCloseChannel channelStore channelId
+            let! forceCloseTxId = node.ForceCloseChannel channelId
             let txUri = BlockExplorer.GetTransaction (account :> IAccount).Currency forceCloseTxId
             Console.WriteLine(
                 sprintf

@@ -210,9 +210,45 @@ type ChannelStore(account: NormalUtxoAccount) =
 
     member self.CheckForClosingTx (channelId: ChannelIdentifier): Async<Option<string * Option<uint32>>> =
         async {
-            channelId
-            |> ignore<ChannelIdentifier>
-            return raise <| NotImplementedException ()
+            let serializedChannel = self.LoadChannel channelId
+            let commitments = serializedChannel.Commitments
+            let currency = self.Currency
+            let network = UtxoCoin.Account.GetNetwork currency
+            let fundingAddressString: string =
+                let fundingAddress: BitcoinAddress =
+                    let fundingDestination: TxDestination =
+                        commitments.FundingScriptCoin.ScriptPubKey.GetDestination()
+                    fundingDestination.GetAddress network
+                fundingAddress.ToString()
+            let scriptHash = Account.GetElectrumScriptHashFromPublicAddress currency fundingAddressString
+            let! historyList =
+                Server.Query
+                    currency
+                    (QuerySettings.Default ServerSelectionMode.Fast)
+                    (ElectrumClient.GetBlockchainScriptHashHistory scriptHash)
+                    None
+            let fundingTxId = TransactionIdentifier.FromHash serializedChannel.Commitments.FundingScriptCoin.Outpoint.Hash
+
+            let closingTxItemOpt =
+                List.tryFind
+                    (
+                        fun historyItem ->
+                            let thisTxId = TransactionIdentifier.FromHash <| uint256 historyItem.TxHash
+                            thisTxId <> fundingTxId
+                    )
+                    historyList
+
+            match closingTxItemOpt with
+            | None -> return None
+            | Some closingTxItem ->
+                let closingTxIdString = closingTxItem.TxHash
+                let closingTxHeightOpt =
+                    let reportedHeight = closingTxItem.Height
+                    if reportedHeight = 0u then
+                        None
+                    else
+                        Some reportedHeight
+                return Some (closingTxIdString, closingTxHeightOpt)
         }
 
 module ChannelManager =

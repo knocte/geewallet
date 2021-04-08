@@ -526,21 +526,31 @@ type NodeServer internal (channelStore: ChannelStore, transportListener: Transpo
 type Node =
     | Client of NodeClient
     | Server of NodeServer
+
+    member self.ChannelStore =
+        match self with
+        | Client nodeClient -> nodeClient.ChannelStore
+        | Server nodeServer -> nodeServer.ChannelStore
+
+    member self.Account =
+        match self with
+        | Client nodeClient -> nodeClient.Account
+        | Server nodeServer -> nodeServer.Account
+
     member self.ForceCloseChannel
-        (channelStore: ChannelStore)
         (channelId: ChannelIdentifier)
         : Async<string> =
-        let account, nodeMasterPrivKey =
+        let nodeMasterPrivKey =
             match self with
-            | Client nodeClient -> nodeClient.Account :> IAccount, nodeClient.NodeMasterPrivKey
-            | Server nodeServer -> nodeServer.Account :> IAccount, nodeServer.NodeMasterPrivKey
-
+            | Client nodeClient -> nodeClient.NodeMasterPrivKey
+            | Server nodeServer -> nodeServer.NodeMasterPrivKey
+        let account = self.Account :> IAccount
         let currency = account.Currency
         let forceCloseUsingCommitmentTx
             (commitmentTxString: string)
             : Async<string> =
             async {
-                let serializedChannel = channelStore.LoadChannel channelId
+                let serializedChannel = self.ChannelStore.LoadChannel channelId
                 let! spendingTransaction = async {
                     let network =
                         UtxoCoin.Account.GetNetwork currency
@@ -578,15 +588,15 @@ type Node =
                 return spendingTransaction.ToHex()
             }
         async {
-            let commitmentTxString = channelStore.GetCommitmentTx channelId
-            let serializedChannel = channelStore.LoadChannel channelId
+            let commitmentTxString = self.ChannelStore.GetCommitmentTx channelId
+            let serializedChannel = self.ChannelStore.LoadChannel channelId
             let! spendingTxString = forceCloseUsingCommitmentTx commitmentTxString
             let! forceCloseTxId = UtxoCoin.Account.BroadcastRawTransaction currency commitmentTxString
             let newSerializedChannel = {
                 serializedChannel with
                     LocalForceCloseSpendingTxOpt = Some spendingTxString
             }
-            channelStore.SaveChannel newSerializedChannel
+            self.ChannelStore.SaveChannel newSerializedChannel
             return forceCloseTxId
         }
 
@@ -595,9 +605,50 @@ type Node =
         (closingTxId: string)
         : Async<Option<string>> =
         async {
-            (channelId, closingTxId)
-            |> ignore<ChannelIdentifier*string>
-            return raise <| NotImplementedException ()
+            let nodeMasterPrivKey =
+                match self with
+                | Client nodeClient -> nodeClient.NodeMasterPrivKey
+                | Server nodeServer -> nodeServer.NodeMasterPrivKey
+            let serializedChannel = self.ChannelStore.LoadChannel channelId
+            let commitments = serializedChannel.Commitments
+            let account = self.Account :> IAccount
+            let currency = account.Currency
+            let network = UtxoCoin.Account.GetNetwork currency
+            let! closingTxHex =
+                Server.Query
+                    currency
+                    (QuerySettings.Default ServerSelectionMode.Fast)
+                    (ElectrumClient.GetBlockchainTransaction (closingTxId.ToString()))
+                    None
+            let closingTx = Transaction.Parse (closingTxHex, network)
+            let channelPrivKeys =
+                let channelIndex = serializedChannel.ChannelIndex
+                nodeMasterPrivKey.ChannelPrivKeys channelIndex
+            let targetAddress =
+                let originAddress = account.PublicAddress
+                BitcoinAddress.Create(originAddress, network)
+            let! feeRate = async {
+                let! feeEstimator = FeeEstimator.Create currency
+                return feeEstimator.FeeRatePerKw
+            }
+            let transactionBuilderOpt =
+                ForceCloseFundsRecovery.tryGetFundsFromRemoteCommitmentTx
+                    commitments.LocalParams
+                    commitments.RemoteParams
+                    commitments.FundingScriptCoin
+                    commitments.RemotePerCommitmentSecrets
+                    commitments.RemoteCommit
+                    channelPrivKeys
+                    network
+                    closingTx
+            match transactionBuilderOpt with
+            | None -> return None
+            | Some transactionBuilder ->
+                transactionBuilder.SendAll targetAddress |> ignore
+                let fee = transactionBuilder.EstimateFees (feeRate.AsNBitcoinFeeRate())
+                transactionBuilder.SendFees fee |> ignore
+                let recoveryTransaction = transactionBuilder.BuildTransaction true
+                return Some <| recoveryTransaction.ToHex()
         }
 
 module public Connection =

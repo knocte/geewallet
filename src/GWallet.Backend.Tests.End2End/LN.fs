@@ -614,7 +614,7 @@ type LN() =
             failwith "incorrect balance after payment 1"
 
         let! _forceCloseTxId =
-            (Node.Client clientWallet.NodeClient).ForceCloseChannel clientWallet.ChannelStore channelId
+            (Node.Client clientWallet.NodeClient).ForceCloseChannel channelId
 
         let locallyForceClosedData =
             match (clientWallet.ChannelStore.ChannelInfo channelId).Status with
@@ -706,7 +706,6 @@ type LN() =
     }
 
     [<Category "G2G_ChannelRemoteForceClosingByFunder_Funder">]
-    [<Ignore "not ready yet">]
     [<Test>]
     member __.``can send monohop payments and handle remote force-close of channel by funder (funder)``() = Async.RunSynchronously <| async {
         use! clientWallet = ClientWalletInstance.New None
@@ -846,7 +845,7 @@ type LN() =
             failwith "incorrect balance after payment 1"
 
         let! _forceCloseTxId =
-            (Node.Client clientWallet.NodeClient).ForceCloseChannel clientWallet.ChannelStore channelId
+            (Node.Client clientWallet.NodeClient).ForceCloseChannel channelId
 
         let locallyForceClosedData =
             match (clientWallet.ChannelStore.ChannelInfo channelId).Status with
@@ -900,7 +899,6 @@ type LN() =
     }
 
     [<Category "G2G_ChannelRemoteForceClosingByFunder_Fundee">]
-    [<Ignore "not ready yet">]
     [<Test>]
     member __.``can receive monohop payments and handle remote force-close of channel by funder (fundee)``() = Async.RunSynchronously <| async {
         use! serverWallet = ServerWalletInstance.New Config.FundeeLightningIPEndpoint (Some Config.FundeeAccountsPrivateKey)
@@ -976,7 +974,6 @@ type LN() =
     }
 
     [<Category "G2G_ChannelRemoteForceClosingByFundee_Funder">]
-    [<Ignore "not ready yet">]
     [<Test>]
     member __.``can send monohop payments and handle remote force-close of channel by fundee (funder)``() = Async.RunSynchronously <| async {
         use! clientWallet = ClientWalletInstance.New None
@@ -1164,7 +1161,6 @@ type LN() =
     }
 
     [<Category "G2G_ChannelRemoteForceClosingByFundee_Fundee">]
-    [<Ignore "not ready yet">]
     [<Test>]
     member __.``can receive monohop payments and handle remote force-close of channel by fundee (fundee)``() = Async.RunSynchronously <| async {
         use! serverWallet = ServerWalletInstance.New Config.FundeeLightningIPEndpoint (Some Config.FundeeAccountsPrivateKey)
@@ -1210,7 +1206,7 @@ type LN() =
             failwith "incorrect balance after receiving payment 1"
 
         let! _forceCloseTxId =
-            (Node.Server serverWallet.NodeServer).ForceCloseChannel serverWallet.ChannelStore channelId
+            (Node.Server serverWallet.NodeServer).ForceCloseChannel channelId
 
         let locallyForceClosedData =
             match (serverWallet.ChannelStore.ChannelInfo channelId).Status with
