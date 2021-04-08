@@ -51,5 +51,7 @@ module public Network =
 
     let public ReceiveLightningEvent (nodeServer: NodeServer) = nodeServer.ReceiveLightningEvent
     let public AcceptLockChannelFunding (nodeServer: NodeServer) = nodeServer.AcceptLockChannelFunding
+    let public CreateRecoveryTxForRemoteForceClose (node: Node) =
+        node.CreateRecoveryTxForRemoteForceClose
 
     let public EndPoint (nodeServer: NodeServer) = nodeServer.EndPoint
