@@ -22,9 +22,7 @@ cp target/release/electrs /bin/electrs
 popd
 
 # Install lnd
-apt install -y curl tar gzip unzip make git
-curl -OJL https://golang.org/dl/go1.14.4.linux-amd64.tar.gz
-tar -C /usr/local -xzf go1.14.4.linux-amd64.tar.gz
+apt install -y curl tar gzip unzip make git golang
 git clone https://github.com/lightningnetwork/lnd
 pushd lnd
 git checkout v0.10.3-beta
