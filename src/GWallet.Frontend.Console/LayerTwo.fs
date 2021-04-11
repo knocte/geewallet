@@ -120,15 +120,20 @@ module LayerTwo =
         (channelId: ChannelIdentifier)
         : Async<unit> =
         async {
-            let! forceCloseTxId = node.ForceCloseChannel channelId
-            let txUri = BlockExplorer.GetTransaction (account :> IAccount).Currency forceCloseTxId
-            Console.WriteLine(
-                sprintf
-                    "Channel %s force-closed:%s%s"
-                    (ChannelId.ToString channelId)
-                    Environment.NewLine
-                    (txUri.ToString())
-            )
+            let! forceCloseTxIdOpt = node.ForceCloseChannel channelId
+            Console.WriteLine (sprintf "Channel %s force closed" (ChannelId.ToString channelId))
+            match forceCloseTxIdOpt with
+            | Some forceCloseTxId ->
+                let txUri = BlockExplorer.GetTransaction (account :> IAccount).Currency forceCloseTxId
+                Console.WriteLine(
+                    sprintf
+                        "Funds recovered in this transaction:%s%s"
+                        Environment.NewLine
+                        (txUri.ToString())
+                )
+            | None ->
+                // FIXME: why?
+                Console.WriteLine "No funds were recovered"
         }
 
     let MaybeForceCloseChannel
@@ -415,6 +420,58 @@ module LayerTwo =
                 }
         }
 
+    let ClaimFundsIfRemoteForceClosed
+        (channelStore: ChannelStore)
+        (channelInfo: ChannelInfo)
+        : Async<Async<seq<string>>> =
+        async {
+            let! closingTxInfoOpt = channelStore.CheckForClosingTx channelInfo.ChannelId
+            match closingTxInfoOpt with
+            | None ->
+                return async {
+                    return seq {
+                        yield! UserInteraction.DisplayLightningChannelStatus channelInfo
+                        yield "        channel is active"
+                    }
+                }
+            | Some (closingTxId, _closingTxHeightOpt) ->
+                return async {
+                    Console.WriteLine(sprintf "Channel %s has been force-closed by the counterparty.")
+                    Console.WriteLine "Account must be unlocked to recover funds."
+                    let password = UserInteraction.AskPassword false
+                    let nodeClient = Lightning.Connection.StartClient channelStore password
+                    let! recoveryTxStringOpt =
+                        Lightning.Network.CreateRecoveryTxForRemoteForceClose
+                            (Node.Client nodeClient)
+                            channelInfo.ChannelId
+                            closingTxId
+                    match recoveryTxStringOpt with
+                    | Some recoveryTxString ->
+                        let! txIdString =
+                            UtxoCoin.Account.BroadcastRawTransaction
+                                channelStore.Currency
+                                recoveryTxString
+                        channelStore.DeleteChannel channelInfo.ChannelId
+                        let txUri = BlockExplorer.GetTransaction (channelStore.Account :> IAccount).Currency txIdString
+                        return seq {
+                            yield! UserInteraction.DisplayLightningChannelStatus channelInfo
+                            yield "        channel closed by counterparty"
+                            yield "        funds have been returned to wallet"
+                            yield sprintf "        recovery transaction is: %s" (txUri.ToString())
+                        }
+                    | None ->
+                        channelStore.DeleteChannel channelInfo.ChannelId
+                        return seq {
+                            yield! UserInteraction.DisplayLightningChannelStatus channelInfo
+                            yield "        channel closed by counterparty"
+                            // FIXME: why?
+                            yield "        no funds were recovered"
+                        }
+
+                }
+        }
+
+
     let GetChannelStatuses (accounts: seq<IAccount>): seq<Async<Async<seq<string>>>> =
         seq {
             let normalUtxoAccounts = accounts.OfType<UtxoCoin.NormalUtxoAccount>()
@@ -435,15 +492,7 @@ module LayerTwo =
                         yield
                             LockChannelIfFundingConfirmed channelStore channelInfo fundingBroadcastButNotLockedData
                     | ChannelStatus.Active ->
-                        yield
-                            async {
-                                return async {
-                                    return seq {
-                                        yield! UserInteraction.DisplayLightningChannelStatus channelInfo
-                                        yield "        channel is active"
-                                    }
-                                }
-                            }
+                        yield ClaimFundsIfRemoteForceClosed channelStore channelInfo
                     | ChannelStatus.Broken ->
                         yield
                             async {
