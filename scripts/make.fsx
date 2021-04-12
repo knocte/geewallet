@@ -5,6 +5,12 @@ open System.IO
 open System.Linq
 open System.Diagnostics
 
+open System.Text
+open System.Text.RegularExpressions
+#r "System.Core.dll"
+#r "System.Xml.Linq.dll"
+open System.Xml.Linq
+
 #r "System.Configuration"
 open System.Configuration
 #load "InfraLib/Misc.fs"
@@ -22,6 +28,50 @@ type BinaryConfig =
     | Release
     override self.ToString() =
         sprintf "%A" self
+
+module MapHelper =
+    let GetKeysOfMap (map: Map<'K,'V>): seq<'K> =
+        map |> Map.toSeq |> Seq.map fst
+
+    let MergeIntoMap<'K,'V when 'K: comparison> (from: seq<'K*'V>): Map<'K,seq<'V>> =
+        let keys = from.Select (fun (k, v) -> k)
+        let keyValuePairs =
+            seq {
+                for key in keys do
+                    let valsForKey = (from.Where (fun (k, v) -> key = k)).Select (fun (k, v) -> v) |> seq
+                    yield key,valsForKey
+            }
+        keyValuePairs |> Map.ofSeq
+
+[<StructuralEquality; StructuralComparison>]
+type private PackageInfo =
+    {
+        PackageId: string
+        PackageVersion: string
+    }
+
+type private Project =
+    { FolderName: string }
+
+[<CustomComparison; CustomEquality>]
+type private ComparableFileInfo =
+    {
+        File: FileInfo
+    }
+    interface IComparable with
+        member this.CompareTo obj =
+            match obj with
+            | null -> this.File.FullName.CompareTo null
+            | :? ComparableFileInfo as other -> this.File.FullName.CompareTo other.File.FullName
+            | _ -> invalidArg "obj" "not a ComparableFileInfo"
+    override this.Equals obj =
+        match obj with
+        | :? ComparableFileInfo as other ->
+            this.File.FullName.Equals other.File.FullName
+        | _ -> false
+    override this.GetHashCode () =
+        this.File.FullName.GetHashCode ()
+
 
 let rec private GatherTarget (args: string list, targetSet: Option<string>): Option<string> =
     match args with
@@ -366,7 +416,188 @@ match maybeTarget with
             Console.Error.WriteLine "Illegal usage of printf/printfn/sprintf/sprintfn/failwithf detected; use SPrintF1/SPrintF2/... instead"
             Environment.Exit 1
 
+    let SanityCheckNugetPackages () =
+
+        let notSubmodule (dir: DirectoryInfo): bool =
+            let getSubmoduleDirsForThisRepo (): seq<DirectoryInfo> =
+                let regex = Regex("path\s*=\s*([^\s]+)")
+                seq {
+                    for regexMatch in regex.Matches (File.ReadAllText (".gitmodules")) do
+                        let submoduleFolderRelativePath = regexMatch.Groups.[1].ToString ()
+                        let submoduleFolder =
+                            DirectoryInfo (
+                                Path.Combine (Directory.GetCurrentDirectory (), submoduleFolderRelativePath)
+                            )
+                        yield submoduleFolder
+                }
+            not (getSubmoduleDirsForThisRepo().Any (fun d -> dir.FullName = d.FullName))
+
+        let sanityCheckNugetPackagesFromSolution (sol: FileInfo) =
+            let rec findPackagesDotConfigFiles (dir: DirectoryInfo): seq<FileInfo> =
+                dir.Refresh()
+                seq {
+                    for file in dir.EnumerateFiles () do
+                        if file.Name.ToLower () = "packages.config" then
+                            yield file
+                    for subdir in dir.EnumerateDirectories().Where notSubmodule do
+                        for file in findPackagesDotConfigFiles subdir do
+                            yield file
+                }
+
+            let getPackageTree (packagesConfigFiles: seq<FileInfo>): Map<ComparableFileInfo,seq<PackageInfo>> =
+                seq {
+                    for packagesConfigFile in packagesConfigFiles do
+                        let xmlDoc = XDocument.Load packagesConfigFile.FullName
+                        for descendant in xmlDoc.Descendants () do
+                            if descendant.Name.LocalName.ToLower() = "package" then
+                                let id = descendant.Attributes().Single(fun attr -> attr.Name.LocalName = "id").Value
+                                let version = descendant.Attributes().Single(fun attr -> attr.Name.LocalName = "version").Value
+                                yield { File = packagesConfigFile }, { PackageId = id; PackageVersion = version }
+                } |> MapHelper.MergeIntoMap
+
+            let getAllPackageIdsAndVersions (packageTree: Map<ComparableFileInfo,seq<PackageInfo>>): Map<PackageInfo,seq<Project>> =
+                seq {
+                    for KeyValue (packagesConfigFile, pkgs) in packageTree do
+                        for pkg in pkgs do
+                            yield pkg, { FolderName = packagesConfigFile.File.Directory.Name }
+                } |> MapHelper.MergeIntoMap
+
+            let getDirectoryNamesForPackagesSet (packages: Map<PackageInfo,seq<Project>>): Map<string,seq<Project>> =
+                seq {
+                    for KeyValue (package, prjs) in packages do
+                        yield (sprintf "%s.%s" package.PackageId package.PackageVersion), prjs
+                } |> Map.ofSeq
+
+            let findMissingPackageDirs (solDir: DirectoryInfo) (idealPackageDirs: Map<string,seq<Project>>): Map<string,seq<Project>> =
+                solDir.Refresh()
+                let packagesSubFolder = Path.Combine (solDir.FullName, "packages") |> DirectoryInfo
+                if not packagesSubFolder.Exists then
+                    failwith (sprintf "'packages' subdir under solution dir %s doesn't exist, run 'make' first" packagesSubFolder.FullName)
+                let packageDirsAbsolutePaths = packagesSubFolder.EnumerateDirectories().Select (fun dir -> dir.FullName)
+                if not (packageDirsAbsolutePaths.Any()) then
+                    Console.Error.WriteLine(sprintf "'packages' subdir under solution dir %s doesn't contain any packages"
+                                                    packagesSubFolder.FullName)
+                    Console.Error.WriteLine "Forgot to `git submodule update --init`?"
+                    Environment.Exit 4
+
+                seq {
+                    for KeyValue (packageDirNameThatShouldExist, prjs) in idealPackageDirs do
+                        if not (packageDirsAbsolutePaths.Contains (Path.Combine(packagesSubFolder.FullName, packageDirNameThatShouldExist))) then
+                            yield packageDirNameThatShouldExist, prjs
+                } |> Map.ofSeq
+
+            let findExcessPackageDirs (solDir: DirectoryInfo) (idealPackageDirs: Map<string,seq<Project>>): seq<string> =
+                solDir.Refresh()
+                let packagesSubFolder = Path.Combine (solDir.FullName, "packages") |> DirectoryInfo
+                if not (packagesSubFolder.Exists) then
+                    failwith (sprintf "'packages' subdir under solution dir %s doesn't exist, run 'make' first" packagesSubFolder.FullName)
+                // "src" is a directory for source codes and build scripts,
+                // not for packages, so we need to exclude it from here
+                let packageDirNames = packagesSubFolder.EnumerateDirectories().Select(fun dir -> dir.Name).Except(["src"])
+                if not (packageDirNames.Any()) then
+                    failwith (sprintf "'packages' subdir under solution dir %s doesn't contain any packages" packagesSubFolder.FullName)
+                let packageDirsThatShouldExist = MapHelper.GetKeysOfMap idealPackageDirs
+                seq {
+                    for packageDirThatExists in packageDirNames do
+                        if not (packageDirsThatShouldExist.Contains packageDirThatExists) then
+                            yield packageDirThatExists
+                }
+
+            let findPackagesWithMoreThanOneVersion
+                (packageTree: Map<ComparableFileInfo,seq<PackageInfo>>)
+                : Map<string,seq<ComparableFileInfo*PackageInfo>> =
+
+                let getAllPackageInfos (packages: Map<ComparableFileInfo,seq<PackageInfo>>) =
+                    let pkgInfos =
+                        seq {
+                            for KeyValue (_, pkgs) in packages do
+                                for pkg in pkgs do
+                                    yield pkg
+                        }
+                    Set pkgInfos
+
+                let getAllPackageVersionsForPackageId (packages: seq<PackageInfo>) (packageId: string) =
+                    seq {
+                        for package in packages do
+                            if package.PackageId = packageId then
+                                yield package.PackageVersion
+                    } |> Set
+
+                let packageInfos = getAllPackageInfos packageTree
+                let packageIdsWithMoreThan1Version =
+                    seq {
+                        for packageId in packageInfos.Select (fun pkg -> pkg.PackageId) do
+                            let versions = getAllPackageVersionsForPackageId packageInfos packageId
+                            if versions.Count > 1 then
+                                yield packageId
+                    }
+                if not (packageIdsWithMoreThan1Version.Any()) then
+                    Map.empty
+                else
+                    seq {
+                        for pkgId in packageIdsWithMoreThan1Version do
+                            let pkgs = seq {
+                                for KeyValue (file, packageInfos) in packageTree do
+                                    for pkg in packageInfos do
+                                        if pkg.PackageId = pkgId then
+                                            yield file, pkg
+                            }
+                            yield pkgId, pkgs
+                    } |> Map.ofSeq
+
+
+            let solDir = sol.Directory
+            solDir.Refresh ()
+            let packageConfigFiles = findPackagesDotConfigFiles solDir
+            let packageTree = getPackageTree packageConfigFiles
+            let packages = getAllPackageIdsAndVersions packageTree
+            Console.WriteLine(sprintf "%d nuget packages found for solution in directory %s" packages.Count solDir.Name)
+            let idealDirList = getDirectoryNamesForPackagesSet packages
+
+            let missingPackageDirs = findMissingPackageDirs solDir idealDirList
+            if missingPackageDirs.Any () then
+                for KeyValue(missingPkg, projects) in missingPackageDirs do
+                    let projectFolderNames = String.Join(",", projects.Select(fun p -> p.FolderName))
+                    Console.Error.WriteLine (sprintf "Missing folder for nuget package in submodule: %s (referenced from projects %s)" missingPkg projectFolderNames)
+                Environment.Exit 1
+
+            let excessPackageDirs = findExcessPackageDirs solDir idealDirList
+            if excessPackageDirs.Any() then
+                let advice = "remove it with git filter-branch to avoid needless bandwidth: http://stackoverflow.com/a/17824718/6503091"
+                for excessPkg in excessPackageDirs do
+                    Console.Error.WriteLine(sprintf "Unused nuget package folder: %s (%s)" excessPkg advice)
+                Environment.Exit 2
+
+            let pkgWithMoreThan1VersionPrint (key: string) (packageInfos: seq<ComparableFileInfo*PackageInfo>) =
+                Console.Error.WriteLine (sprintf "Package found with more than one version: %s. All occurrences:" key)
+                for file,pkgInfo in packageInfos do
+                    Console.Error.WriteLine (sprintf "* Version: %s. Project folder: %s" pkgInfo.PackageVersion file.File.Directory.Name)
+            let packagesWithMoreThanOneVersion = findPackagesWithMoreThanOneVersion packageTree
+            if packagesWithMoreThanOneVersion.Any() then
+                Map.iter pkgWithMoreThan1VersionPrint packagesWithMoreThanOneVersion
+                Environment.Exit 3
+
+            Console.WriteLine(sprintf "Nuget sanity check succeeded for solution dir %s" solDir.FullName)
+
+
+        let rec findSolutions (dir: DirectoryInfo): seq<FileInfo> =
+            dir.Refresh ()
+            seq {
+                // FIXME: avoid returning duplicates? (in case there are 2 .sln files in the same dir...)
+                for file in dir.EnumerateFiles () do
+                    if file.Name.ToLower().EndsWith ".sln" then
+                        yield file
+                for subdir in dir.EnumerateDirectories().Where notSubmodule do
+                    for solutionDir in findSolutions subdir do
+                        yield solutionDir
+            }
+
+        let solutions = Directory.GetCurrentDirectory() |> DirectoryInfo |> findSolutions
+        for sol in solutions do
+            sanityCheckNugetPackagesFromSolution sol
+
     FindOffendingPrintfUsage()
+    SanityCheckNugetPackages()
 
 | Some(someOtherTarget) ->
     Console.Error.WriteLine("Unrecognized target: " + someOtherTarget)

@@ -22,9 +22,9 @@ stockmono_build:
     - mono --version
 
     - ./configure.sh
-    - make sanitycheck
     - make strict
     - make
+    - make sanitycheck
     - make install
 
 stockmono_test_unit:
@@ -66,9 +66,9 @@ newmono_build:
     expire_in: 50days
   script:
     - ./configure.sh
-    - make sanitycheck
     - make strict
     - make
+    - make sanitycheck
     - make install
     # so that we log the version of nuget for when it works
     - make nuget
