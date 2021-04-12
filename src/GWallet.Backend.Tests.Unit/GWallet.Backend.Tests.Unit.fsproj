@@ -143,13 +143,13 @@
       <HintPath>..\..\packages\System.Memory.4.5.3\lib\netstandard2.0\System.Memory.dll</HintPath>
     </Reference>
     <Reference Include="DotNetLightning.Core">
-      <HintPath>..\..\packages\DotNetLightning.Kiss.1.1.2-date20210402-0952-git-6281acc\lib\netstandard2.0\DotNetLightning.Core.dll</HintPath>
+      <HintPath>..\..\packages\DotNetLightning.Kiss.1.1.2-date20210412-1027-git-6062c26\lib\netstandard2.0\DotNetLightning.Core.dll</HintPath>
     </Reference>
     <Reference Include="InternalBech32Encoder">
-      <HintPath>..\..\packages\DotNetLightning.Kiss.1.1.2-date20210402-0952-git-6281acc\lib\netstandard2.0\InternalBech32Encoder.dll</HintPath>
+      <HintPath>..\..\packages\DotNetLightning.Kiss.1.1.2-date20210412-1027-git-6062c26\lib\netstandard2.0\InternalBech32Encoder.dll</HintPath>
     </Reference>
     <Reference Include="ResultUtils">
-      <HintPath>..\..\packages\DotNetLightning.Kiss.1.1.2-date20210402-0952-git-6281acc\lib\netstandard2.0\ResultUtils.dll</HintPath>
+      <HintPath>..\..\packages\DotNetLightning.Kiss.1.1.2-date20210412-1027-git-6062c26\lib\netstandard2.0\ResultUtils.dll</HintPath>
     </Reference>
     <Reference Include="BouncyCastle.Crypto">
       <HintPath>..\..\packages\Portable.BouncyCastle.1.8.6.7\lib\net40\BouncyCastle.Crypto.dll</HintPath>
