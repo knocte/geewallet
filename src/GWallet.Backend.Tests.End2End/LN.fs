@@ -959,7 +959,7 @@ type LN() =
                 return! waitForRemoteForceClose()
         }
         let! recoveryTxStringOpt = waitForRemoteForceClose()
-        let recoveryTxString = UnwrapOption recoveryTxStringOpt "no funds could be recovered"
+        let recoveryTxString = UnwrapResult recoveryTxStringOpt "no funds could be recovered"
         let! _recoveryTxId =
             UtxoCoin.Account.BroadcastRawTransaction
                 Currency.BTC
@@ -1128,7 +1128,7 @@ type LN() =
                 (Node.Client clientWallet.NodeClient)
                 channelId
                 closingTxIdString
-        let recoveryTxString = UnwrapOption recoveryTxStringOpt "no funds could be recovered"
+        let recoveryTxString = UnwrapResult recoveryTxStringOpt "no funds could be recovered"
         let! _recoveryTxId =
             UtxoCoin.Account.BroadcastRawTransaction
                 Currency.BTC

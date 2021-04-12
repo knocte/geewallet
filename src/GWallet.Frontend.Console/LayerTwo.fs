@@ -120,10 +120,10 @@ module LayerTwo =
         (channelId: ChannelIdentifier)
         : Async<unit> =
         async {
-            let! forceCloseTxIdOpt = node.ForceCloseChannel channelId
+            let! forceCloseTxIdResult = node.ForceCloseChannel channelId
             Console.WriteLine (sprintf "Channel %s force closed" (ChannelId.ToString channelId))
-            match forceCloseTxIdOpt with
-            | Some forceCloseTxId ->
+            match forceCloseTxIdResult with
+            | Ok forceCloseTxId ->
                 let txUri = BlockExplorer.GetTransaction (account :> IAccount).Currency forceCloseTxId
                 Console.WriteLine(
                     sprintf
@@ -131,9 +131,8 @@ module LayerTwo =
                         Environment.NewLine
                         (txUri.ToString())
                 )
-            | None ->
-                // FIXME: why?
-                Console.WriteLine "No funds were recovered"
+            | Error ClosingBalanceBelowDustLimitError ->
+                Console.WriteLine "Closing balance of channel was below the dust limit. No funds were recovered."
         }
 
     let MaybeForceCloseChannel
@@ -440,13 +439,13 @@ module LayerTwo =
                     Console.WriteLine "Account must be unlocked to recover funds."
                     let password = UserInteraction.AskPassword false
                     let nodeClient = Lightning.Connection.StartClient channelStore password
-                    let! recoveryTxStringOpt =
+                    let! recoveryTxStringResult =
                         Lightning.Network.CreateRecoveryTxForRemoteForceClose
                             (Node.Client nodeClient)
                             channelInfo.ChannelId
                             closingTxId
-                    match recoveryTxStringOpt with
-                    | Some recoveryTxString ->
+                    match recoveryTxStringResult with
+                    | Ok recoveryTxString ->
                         let! txIdString =
                             UtxoCoin.Account.BroadcastRawTransaction
                                 channelStore.Currency
@@ -459,13 +458,12 @@ module LayerTwo =
                             yield "        funds have been returned to wallet"
                             yield sprintf "        recovery transaction is: %s" (txUri.ToString())
                         }
-                    | None ->
+                    | Error ClosingBalanceBelowDustLimitError ->
                         channelStore.DeleteChannel channelInfo.ChannelId
                         return seq {
                             yield! UserInteraction.DisplayLightningChannelStatus channelInfo
                             yield "        channel closed by counterparty"
-                            // FIXME: why?
-                            yield "        no funds were recovered"
+                            yield "        Local channel balance was below the dust limit. No funds were recovered."
                         }
 
                 }
