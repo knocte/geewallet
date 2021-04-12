@@ -4,6 +4,7 @@ open System
 open System.Net
 open System.Linq
 
+open ResultUtils
 open ResultUtils.Portability
 
 open GWallet.Backend
