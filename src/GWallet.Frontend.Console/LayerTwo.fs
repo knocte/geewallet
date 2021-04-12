@@ -131,7 +131,7 @@ module LayerTwo =
                         Environment.NewLine
                         (txUri.ToString())
                 )
-            | Error ClosingBalanceBelowDustLimitError ->
+            | Error ClosingBalanceBelowDustLimit ->
                 Console.WriteLine "Closing balance of channel was below the dust limit. No funds were recovered."
         }
 
@@ -458,7 +458,7 @@ module LayerTwo =
                             yield "        funds have been returned to wallet"
                             yield sprintf "        recovery transaction is: %s" (txUri.ToString())
                         }
-                    | Error ClosingBalanceBelowDustLimitError ->
+                    | Error ClosingBalanceBelowDustLimit ->
                         channelStore.DeleteChannel channelInfo.ChannelId
                         return seq {
                             yield! UserInteraction.DisplayLightningChannelStatus channelInfo

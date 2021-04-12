@@ -9,6 +9,7 @@ open System.Threading
 open NUnit.Framework
 open NBitcoin
 open DotNetLightning.Utils
+open ResultUtils
 open ResultUtils.Portability
 
 open GWallet.Backend

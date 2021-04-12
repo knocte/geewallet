@@ -10,6 +10,7 @@ open DotNetLightning.Channel.ForceCloseFundsRecovery
 open DotNetLightning.Crypto
 open DotNetLightning.Utils
 open DotNetLightning.Serialization.Msgs
+open ResultUtils
 open ResultUtils.Portability
 
 open GWallet.Backend
@@ -164,7 +165,7 @@ type PendingChannel internal (outgoingUnfundedChannel: OutgoingUnfundedChannel) 
                 self.OutgoingUnfundedChannel.ChannelId
 
 type ClosingBalanceBelowDustLimitError =
-    | ClosingBalanceBelowDustLimitError
+    | ClosingBalanceBelowDustLimit
     member __.Message: string =
         "closing balance below dust limit"
 
@@ -586,7 +587,7 @@ type Node =
                     | Error (LocalCommitmentTxRecoveryError.InvalidCommitmentTx invalidCommitmentTxError) ->
                         return failwith ("invalid commitment tx: " + invalidCommitmentTxError.Message)
                     | Error LocalCommitmentTxRecoveryError.BalanceBelowDustLimit ->
-                        return Error <| ClosingBalanceBelowDustLimitError
+                        return Error <| ClosingBalanceBelowDustLimit
                     | Ok transactionBuilder ->
                         transactionBuilder.SendAll targetAddress |> ignore
                         let fee = transactionBuilder.EstimateFees (feeRate.AsNBitcoinFeeRate())
@@ -661,7 +662,7 @@ type Node =
             | Error (CommitmentNumberFromTheFuture commitmentNumber) ->
                 return failwith (SPrintF1 "commitment number of tx is from the future (%s)" (commitmentNumber.ToString()))
             | Error RemoteCommitmentTxRecoveryError.BalanceBelowDustLimit ->
-                return Error <| ClosingBalanceBelowDustLimitError
+                return Error <| ClosingBalanceBelowDustLimit
             | Ok transactionBuilder ->
                 transactionBuilder.SendAll targetAddress |> ignore
                 let fee = transactionBuilder.EstimateFees (feeRate.AsNBitcoinFeeRate())
