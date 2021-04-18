@@ -132,7 +132,7 @@ type LN() =
             let! closeChannelRes = Lightning.Network.CloseChannel walletInstance.NodeServer.NodeClient channelId
             match closeChannelRes with
             | Ok _ -> ()
-            | Error err -> failwith (SPrintF1 "error when closing channel: %s" err.Message)
+            | Error err -> failwith (SPrintF1 "error when closing channel: %s" (err :> IErrorMsg).Message)
 
             match (walletInstance.ChannelStore.ChannelInfo channelId).Status with
             | ChannelStatus.Closing -> ()
@@ -382,7 +382,7 @@ type LN() =
         let! closeChannelRes = Lightning.Network.CloseChannel walletInstance.NodeServer.NodeClient channelId
         match closeChannelRes with
         | Ok _ -> ()
-        | Error err -> failwith (SPrintF1 "error when closing channel: %s" err.Message)
+        | Error err -> failwith (SPrintF1 "error when closing channel: %s" (err :> IErrorMsg).Message)
 
         match (walletInstance.ChannelStore.ChannelInfo channelId).Status with
         | ChannelStatus.Closing -> ()
@@ -479,7 +479,6 @@ type LN() =
     }
 
     [<Category "G2G_ChannelForceClosing_Funder">]
-    [<Ignore "not ready yet">]
     [<Test>]
     member __.``can send monohop payments and force-close channel (funder)``() = Async.RunSynchronously <| async {
         use! walletInstance = WalletInstance.New None None
@@ -618,7 +617,7 @@ type LN() =
         if Money(channelInfoAfterPayment1.Balance, MoneyUnit.BTC) <> fundingAmount - walletToWalletTestPayment1Amount - walletToWalletTestPayment2Amount then
             failwith "incorrect balance after payment 1"
 
-        let! _forceCloseTxId = Lightning.Node.ForceCloseChannel channelId
+        let! _forceCloseTxId = (Node.Client walletInstance.NodeServer.NodeClient).ForceCloseChannel channelId
 
         let locallyForceClosedData =
             match (walletInstance.ChannelStore.ChannelInfo channelId).Status with
@@ -663,7 +662,6 @@ type LN() =
     }
 
     [<Category "G2G_ChannelForceClosing_Fundee">]
-    [<Ignore "not ready yet">]
     [<Test>]
     member __.``can receive monohop payments and force-close channel (fundee)``() = Async.RunSynchronously <| async {
         use! walletInstance = WalletInstance.New (Some Config.FundeeLightningIPEndpoint) (Some Config.FundeeAccountsPrivateKey)

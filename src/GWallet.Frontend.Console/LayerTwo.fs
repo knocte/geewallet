@@ -189,7 +189,7 @@ module LayerTwo =
                 let! closeRes = Lightning.Network.CloseChannel nodeClient channelId
                 match closeRes with
                 | Error closeError ->
-                    return failwithf "Error closing channel: %s" closeError.Message
+                    return failwithf "Error closing channel: %s" (closeError :> IErrorMsg).Message
                 | Ok () ->
                     Console.WriteLine "Channel closed."
                 UserInteraction.PressAnyKeyToContinue()

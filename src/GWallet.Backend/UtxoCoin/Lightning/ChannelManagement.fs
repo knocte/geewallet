@@ -7,6 +7,7 @@ open NBitcoin
 
 open GWallet.Backend
 open GWallet.Backend.UtxoCoin
+open GWallet.Backend.FSharpUtil
 open GWallet.Backend.FSharpUtil.UwpHacks
 
 type FundingBroadcastButNotLockedData =
@@ -74,23 +75,32 @@ type ChannelInfo =
         FundingOutPointIndex = serializedChannel.Commitments.FundingScriptCoin.Outpoint.N
         Currency = currency
         Status =
-            match serializedChannel.ChanState with
-            | ChannelState.Negotiating _
-            | ChannelState.Closing _ ->
-                Closing
-            | ChannelState.Closed _ ->
-                Closed
-            | ChannelState.Normal _ -> ChannelStatus.Active
-            | ChannelState.WaitForFundingConfirmed waitForFundingConfirmedData ->
-                let txId = TransactionIdentifier.FromHash waitForFundingConfirmedData.Commitments.FundingScriptCoin.Outpoint.Hash
-                let minimumDepth = serializedChannel.MinSafeDepth.Value
-                let fundingBroadcastButNotLockedData = {
+            match serializedChannel.LocalForceCloseSpendingTxOpt with
+            | Some localForceCloseSpendingTx ->
+                ChannelStatus.LocallyForceClosed {
+                    Network = serializedChannel.Network
                     Currency = currency
-                    TxId = txId
-                    MinimumDepth = minimumDepth
+                    ToSelfDelay = serializedChannel.Commitments.LocalParams.ToSelfDelay.Value
+                    SpendingTransactionString = localForceCloseSpendingTx
                 }
-                ChannelStatus.FundingBroadcastButNotLocked fundingBroadcastButNotLockedData
-            | _ -> ChannelStatus.Broken
+            | None ->
+                match serializedChannel.ChanState with
+                | ChannelState.Negotiating _
+                | ChannelState.Closing _ ->
+                    Closing
+                | ChannelState.Closed _ ->
+                    Closed
+                | ChannelState.Normal _ -> ChannelStatus.Active
+                | ChannelState.WaitForFundingConfirmed waitForFundingConfirmedData ->
+                    let txId = TransactionIdentifier.FromHash waitForFundingConfirmedData.Commitments.FundingScriptCoin.Outpoint.Hash
+                    let minimumDepth = serializedChannel.MinSafeDepth.Value
+                    let fundingBroadcastButNotLockedData = {
+                        Currency = currency
+                        TxId = txId
+                        MinimumDepth = minimumDepth
+                    }
+                    ChannelStatus.FundingBroadcastButNotLocked fundingBroadcastButNotLockedData
+                | _ -> ChannelStatus.Broken
     }
 
 type ChannelStore(account: NormalUtxoAccount) =
@@ -165,6 +175,14 @@ type ChannelStore(account: NormalUtxoAccount) =
                channelInfo.Status <> ChannelStatus.Closed then
                 yield channelInfo
     }
+
+    member self.GetCommitmentTx (channelId: ChannelIdentifier): string =
+        let commitments =
+            let serializedChannel = self.LoadChannel channelId
+            UnwrapOption
+                serializedChannel.ChanState.Commitments
+                "A channel can only end up in the wallet if it has commitments."
+        commitments.LocalCommit.PublishableTxs.CommitTx.Value.ToHex()
 
 
 module ChannelManager =
