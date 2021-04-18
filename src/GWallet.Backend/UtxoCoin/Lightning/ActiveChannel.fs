@@ -36,6 +36,15 @@ type internal LockFundingError =
                 SPrintF1 "Expected funding_locked message, got %A" (msg.GetType())
             | InvalidFundingLocked (_, err) ->
                 SPrintF1 "Invalid funding_locked message: %s" err.Message
+        member self.ChannelBreakdown: bool =
+            match self with
+            | FundingNotConfirmed _ -> false
+            | FundingOnChainLocationUnknown _ -> false
+            | RecvFundingLocked recvMsgError -> (recvMsgError :> IErrorMsg).ChannelBreakdown
+            | FundingLockedPeerErrorResponse _ -> true
+            | ExpectedFundingLocked _ -> false
+            | InvalidFundingLocked _ -> true
+
     member internal self.PossibleBug =
         match self with
         | RecvFundingLocked err -> err.PossibleBug
@@ -55,6 +64,11 @@ type internal ReconnectActiveChannelError =
                 SPrintF1 "Error reconnecting: %s" (err :> IErrorMsg).Message
             | LockFunding err ->
                 SPrintF1 "Error locking funding: %s" (err :> IErrorMsg).Message
+        member self.ChannelBreakdown: bool =
+            match self with
+            | Reconnect reconnectError -> (reconnectError :> IErrorMsg).ChannelBreakdown
+            | LockFunding lockFundingError -> (lockFundingError :> IErrorMsg).ChannelBreakdown
+
     member internal self.PossibleBug =
         match self with
         | Reconnect err -> err.PossibleBug
@@ -76,6 +90,13 @@ type internal SendCommitError =
                 SPrintF1 "Expected revoke_and_ack, got %A" (msg.GetType())
             | InvalidRevokeAndAck (_, err) ->
                 SPrintF1 "Invalid revoke_and_ack: %s" err.Message
+        member self.ChannelBreakdown: bool =
+            match self with
+            | RecvRevokeAndAck recvMsgError -> (recvMsgError :> IErrorMsg).ChannelBreakdown
+            | CommitmentSignedPeerErrorResponse _ -> true
+            | ExpectedRevokeAndAck _ -> false
+            | InvalidRevokeAndAck _ -> true
+
     member internal self.PossibleBug =
         match self with
         | RecvRevokeAndAck err -> err.PossibleBug
@@ -99,6 +120,13 @@ type internal RecvCommitError =
                 SPrintF1 "Expected commitment_signed, got %A" (msg.GetType())
             | InvalidCommitmentSigned (_, err) ->
                 SPrintF1 "Invalid commitment signed: %s" err.Message
+        member self.ChannelBreakdown: bool =
+            match self with
+            | RecvCommitmentSigned recvMsgError -> (recvMsgError :> IErrorMsg).ChannelBreakdown
+            | PeerErrorMessageInsteadOfCommitmentSigned _
+            | InvalidCommitmentSigned _ -> true
+            | ExpectedCommitmentSigned _ -> false
+
     member internal self.PossibleBug =
         match self with
         | RecvCommitmentSigned err -> err.PossibleBug
@@ -119,6 +147,14 @@ type internal SendMonoHopPaymentError =
                 SPrintF1 "Error sending commitment: %s" (err :> IErrorMsg).Message
             | RecvCommit err ->
                 SPrintF1 "Error receiving commitment: %s" (err :> IErrorMsg).Message
+        member self.ChannelBreakdown: bool =
+            match self with
+            | InvalidMonoHopPayment _ -> false
+            | SendCommit sendCommitError ->
+                (sendCommitError :> IErrorMsg).ChannelBreakdown
+            | RecvCommit recvCommitError ->
+                (recvCommitError :> IErrorMsg).ChannelBreakdown
+
     member internal self.PossibleBug =
         match self with
         | InvalidMonoHopPayment _ -> false
@@ -147,6 +183,18 @@ and internal RecvMonoHopPaymentError =
                 SPrintF1 "Error receiving commitment: %s" (err :> IErrorMsg).Message
             | SendCommit err ->
                 SPrintF1 "Error sending commitment: %s" (err :> IErrorMsg).Message
+        member self.ChannelBreakdown: bool =
+            match self with
+            | RecvMonoHopPayment recvMsgError ->
+                (recvMsgError :> IErrorMsg).ChannelBreakdown
+            | PeerErrorMessageInsteadOfMonoHopPayment _ -> true
+            | InvalidMonoHopPayment _ -> true
+            | ExpectedMonoHopPayment _ -> false
+            | RecvCommit recvCommitError ->
+                (recvCommitError :> IErrorMsg).ChannelBreakdown
+            | SendCommit sendCommitError ->
+                (sendCommitError :> IErrorMsg).ChannelBreakdown
+
     member internal self.PossibleBug =
         match self with
         | RecvMonoHopPayment err -> err.PossibleBug
