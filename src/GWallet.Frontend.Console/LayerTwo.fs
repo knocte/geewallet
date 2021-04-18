@@ -10,6 +10,7 @@ open GWallet.Backend
 open GWallet.Backend.UtxoCoin
 open GWallet.Backend.UtxoCoin.Lightning
 open GWallet.Backend.FSharpUtil
+open GWallet.Backend.FSharpUtil.UwpHacks
 
 module LayerTwo =
 
@@ -113,15 +114,32 @@ module LayerTwo =
                 Console.WriteLine "Invalid option"
                 AskChannelId channelStore isFunderOpt
 
+    let ForceCloseChannel
+        (node: Node)
+        (currency: Currency)
+        (channelId: ChannelIdentifier)
+        : Async<unit> =
+        async {
+            let! forceCloseTxId = node.ForceCloseChannel channelId
+            let txUri = BlockExplorer.GetTransaction currency forceCloseTxId
+            Console.WriteLine(
+                sprintf
+                    "Channel %s force-closed:%s%s"
+                    (ChannelId.ToString channelId)
+                    Environment.NewLine
+                    (txUri.ToString())
+            )
+        }
+
     let MaybeForceCloseChannel
         (node: Node)
+        (currency: Currency)
         (channelId: ChannelIdentifier)
         (error: IErrorMsg)
         : Async<unit> =
             async {
                 if error.ChannelBreakdown then
-                    let! forceCloseTxId = node.ForceCloseChannel channelId
-                    Console.WriteLine(sprintf "Channel %s force-closed. txid == %s" (ChannelId.ToString channelId) forceCloseTxId)
+                    return! ForceCloseChannel node currency channelId
             }
 
     let OpenChannel(): Async<unit> =
@@ -195,17 +213,43 @@ module LayerTwo =
             match channelIdOpt with
             | None -> return ()
             | Some channelId ->
-                let password = UserInteraction.AskPassword false
-                let nodeClient = Lightning.Connection.StartClient channelStore password
-                let! closeRes = Lightning.Network.CloseChannel nodeClient channelId
-                match closeRes with
-                | Error closeError ->
-                    Console.WriteLine(sprintf "Error closing channel: %s" (closeError :> IErrorMsg).Message)
-                    do! MaybeForceCloseChannel (Node.Client nodeClient) channelId closeError
-                | Ok () ->
-                    Console.WriteLine "Channel closed."
-                UserInteraction.PressAnyKeyToContinue()
-                return ()
+                let currency = (account :> IAccount).Currency
+                let channelInfo = channelStore.ChannelInfo channelId
+                if channelInfo.IsFunder then
+                    let password = UserInteraction.AskPassword false
+                    let nodeClient = Lightning.Connection.StartClient channelStore password
+                    let! closeRes = Lightning.Network.CloseChannel nodeClient channelId
+                    match closeRes with
+                    | Error closeError ->
+                        Console.WriteLine(sprintf "Error closing channel: %s" (closeError :> IErrorMsg).Message)
+                        if (closeError :> IErrorMsg).ChannelBreakdown then
+                            return! ForceCloseChannel (Node.Client nodeClient) currency channelId
+                        else
+                            match closeError with
+                            | NodeInitiateCloseChannelError.Reconnect _error ->
+                                Console.WriteLine "Fundee node seems to be unreachable over the network, so can't close the channel cooperatively at the moment."
+                                Console.WriteLine "You might want to wait and try again later, or force-close the channel at a last resort."
+                                if UserInteraction.AskYesNo "Do you want to force-close the channel now?" then
+                                    return! ForceCloseChannel (Node.Client nodeClient) currency channelId
+                            | _ -> ()
+                    | Ok () ->
+                        Console.WriteLine "Channel closed."
+                    UserInteraction.PressAnyKeyToContinue()
+                    return ()
+                else
+                    Console.WriteLine "You are the fundee of this channel so, for it to be closed cooperatively:"
+                    Console.WriteLine "1. Go back to main menu."
+                    Console.WriteLine (
+                        SPrintF1
+                            "2. Choose option to '%s'"
+                            (Presentation.ConvertPascalCaseToSentence (Operations.ReceiveLightningEvent.ToString()))
+                    )
+                    Console.WriteLine "3. Tell the funder to close the channel"
+                    Console.WriteLine "But if you can't tell the funder, the last resort is to force-close the channel."
+                    if UserInteraction.AskYesNo "Do you want to force-close the channel now?" then
+                        let password = UserInteraction.AskPassword false
+                        let nodeClient = Lightning.Connection.StartClient channelStore password
+                        return! ForceCloseChannel (Node.Client nodeClient) currency channelId
         }
 
 
@@ -247,8 +291,9 @@ module LayerTwo =
                     let! paymentRes = Lightning.Network.SendMonoHopPayment nodeClient channelId transferAmount
                     match paymentRes with
                     | Error nodeSendMonoHopPaymentError ->
+                        let currency = (account :> IAccount).Currency
                         Console.WriteLine(sprintf "Error sending monohop payment: %s" nodeSendMonoHopPaymentError.Message)
-                        do! MaybeForceCloseChannel (Node.Client nodeClient) channelId nodeSendMonoHopPaymentError
+                        do! MaybeForceCloseChannel (Node.Client nodeClient) currency channelId nodeSendMonoHopPaymentError
                     | Ok () ->
                         Console.WriteLine "Payment sent."
                     UserInteraction.PressAnyKeyToContinue()
@@ -269,8 +314,9 @@ module LayerTwo =
                 let! receiveLightningEventRes = Lightning.Network.ReceiveLightningEvent nodeServer channelId
                 match receiveLightningEventRes with
                 | Error nodeReceiveLightningEventError ->
+                    let currency = (account :> IAccount).Currency
                     Console.WriteLine(sprintf "Error receiving lightning event: %s" nodeReceiveLightningEventError.Message)
-                    do! MaybeForceCloseChannel (Node.Server nodeServer) channelId nodeReceiveLightningEventError
+                    do! MaybeForceCloseChannel (Node.Server nodeServer) currency channelId nodeReceiveLightningEventError
                 | Ok msg ->
                     match msg with
                     | IncomingChannelEvent.MonoHopUnidirectionalPayment ->
@@ -282,6 +328,7 @@ module LayerTwo =
 
     let LockChannel (channelStore: ChannelStore)
                     (channelInfo: ChannelInfo)
+                    (currency)
                         : Async<seq<string>> =
         let channelId = channelInfo.ChannelId
 
@@ -291,7 +338,7 @@ module LayerTwo =
                 match lockFundingRes with
                 | Error lockFundingError ->
                     Console.WriteLine(sprintf "Error reestablishing channel: %s" lockFundingError.Message)
-                    do! MaybeForceCloseChannel node channelId lockFundingError
+                    do! MaybeForceCloseChannel node currency channelId lockFundingError
                 | Ok () ->
                     Console.WriteLine(sprintf "funding locked for channel %s" (ChannelId.ToString channelId))
                 return seq {
@@ -329,11 +376,12 @@ module LayerTwo =
     let LockChannelIfFundingConfirmed (channelStore: ChannelStore)
                                       (channelInfo: ChannelInfo)
                                       (fundingBroadcastButNotLockedData: FundingBroadcastButNotLockedData)
+                                      (currency)
                                           : Async<Async<seq<string>>> =
         async {
             let! remainingConfirmations = fundingBroadcastButNotLockedData.GetRemainingConfirmations()
             if remainingConfirmations = 0u then
-                return LockChannel channelStore channelInfo
+                return LockChannel channelStore channelInfo currency
             else
                 return async {
                     return seq {
@@ -360,8 +408,13 @@ module LayerTwo =
                     let channelInfo = channelStore.ChannelInfo channelId
                     match channelInfo.Status with
                     | ChannelStatus.FundingBroadcastButNotLocked fundingBroadcastButNotLockedData ->
+                        let currency = (account :> IAccount).Currency
                         yield
-                            LockChannelIfFundingConfirmed channelStore channelInfo fundingBroadcastButNotLockedData
+                            LockChannelIfFundingConfirmed
+                                channelStore
+                                channelInfo
+                                fundingBroadcastButNotLockedData
+                                currency
                     | ChannelStatus.Active ->
                         yield
                             async {
