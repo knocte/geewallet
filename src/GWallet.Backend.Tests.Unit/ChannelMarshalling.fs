@@ -551,6 +551,7 @@ type ChannelMarshalling () =
         "024f384dbd20b5b44c1301874714065086e721b07afaa3d725149712ad1ef69712"
       ]
     },
+    "localForceCloseSpendingTxOpt": null,
     "minSafeDepth": {
       "case": "BlockHeightOffset32",
       "fields": [
