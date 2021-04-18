@@ -38,6 +38,25 @@ type LocallyForceClosedData =
         ToSelfDelay: uint16
         SpendingTransactionString: string
     }
+    member self.GetRemainingConfirmations (): Async<uint16> =
+        async {
+            let spendingTransaction = Transaction.Parse (self.SpendingTransactionString, self.Network)
+            let forceCloseTxId =
+                let txIn = Seq.exactlyOne spendingTransaction.Inputs
+                txIn.PrevOut.Hash
+            let! confirmationCount =
+                UtxoCoin.Server.Query
+                    self.Currency
+                    (UtxoCoin.QuerySettings.Default ServerSelectionMode.Fast)
+                    (UtxoCoin.ElectrumClient.GetConfirmations (forceCloseTxId.ToString()))
+                    None
+            if confirmationCount < uint32 self.ToSelfDelay then
+                let remainingConfirmations = self.ToSelfDelay - uint16 confirmationCount
+                return remainingConfirmations
+            else
+                return 0us
+        }
+
 
 type ChannelStatus =
     | FundingBroadcastButNotLocked of FundingBroadcastButNotLockedData
@@ -175,6 +194,10 @@ type ChannelStore(account: NormalUtxoAccount) =
                channelInfo.Status <> ChannelStatus.Closed then
                 yield channelInfo
     }
+
+    member self.DeleteChannel (channelId: ChannelIdentifier): unit =
+        let fileName = self.ChannelFileName channelId
+        File.Delete fileName
 
     member self.GetCommitmentTx (channelId: ChannelIdentifier): string =
         let commitments =
