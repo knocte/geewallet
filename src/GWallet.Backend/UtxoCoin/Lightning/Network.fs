@@ -24,6 +24,9 @@ type PeerDisconnectedError =
                 "peer disconnected after sending a partial message"
             else
                 "peer disconnected"
+        member __.ChannelBreakdown =
+            false
+
     member internal self.PossibleBug =
         not self.Abruptly
 
@@ -57,6 +60,9 @@ type HandshakeError =
                 SPrintF1 "Peer disconnected before sending handshake act 3: %s" (err :> IErrorMsg).Message
             | InvalidAct3 err ->
                 SPrintF1 "Invalid handshake act 3: %s" err.Message
+        member __.ChannelBreakdown =
+            false
+
     member internal self.PossibleBug =
         match self with
         | DisconnectedOnAct1 _
@@ -78,6 +84,11 @@ type RecvBytesError =
                 SPrintF1 "Peer disconnected: %s" (err :> IErrorMsg).Message
             | Decryption err ->
                 SPrintF1 "Error decrypting message from peer: %s" err.Message
+        member self.ChannelBreakdown: bool =
+            match self with
+            | PeerDisconnected peerDisconnectedError -> (peerDisconnectedError :> IErrorMsg).ChannelBreakdown
+            | Decryption _ -> true
+
     member internal self.PossibleBug =
         match self with
         | PeerDisconnected err -> err.PossibleBug
@@ -148,6 +159,9 @@ type PeerErrorMessage =
                     "(unknown error code)"
             else
                 System.Text.ASCIIEncoding.ASCII.GetString self.ErrorMsg.Data
+
+        member __.ChannelBreakdown: bool =
+            true
 
 type internal TransportStream =
     internal {

@@ -31,6 +31,14 @@ type internal ReestablishError =
                 SPrintF1 "Expected channel_reestablish, got %A" (msg.GetType())
             | ExpectedReestablishOrFundingLockedMsg msg ->
                 SPrintF1 "Expected channel_reestablish or funding_locked, got %A" (msg.GetType())
+        member self.ChannelBreakdown: bool =
+            match self with
+            | RecvReestablish recvMsgError ->
+                (recvMsgError :> IErrorMsg).ChannelBreakdown
+            | PeerErrorResponse _ -> true
+            | ExpectedReestablishMsg _ -> false
+            | ExpectedReestablishOrFundingLockedMsg _ -> false
+
     member internal self.PossibleBug =
         match self with
         | RecvReestablish err -> err.PossibleBug
@@ -48,6 +56,13 @@ type internal ReconnectError =
                 SPrintF1 "Error reconnecting to peer: %s" (err :> IErrorMsg).Message
             | Reestablish err ->
                 SPrintF1 "Error reestablishing channel with connected peer: %s" (err :> IErrorMsg).Message
+        member self.ChannelBreakdown: bool =
+            match self with
+            | Connect connectError ->
+                (connectError :> IErrorMsg).ChannelBreakdown
+            | Reestablish reestablishError ->
+                (reestablishError :> IErrorMsg).ChannelBreakdown
+
     member internal self.PossibleBug =
         match self with
         | Connect err -> err.PossibleBug
