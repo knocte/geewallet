@@ -120,15 +120,19 @@ module LayerTwo =
         (channelId: ChannelIdentifier)
         : Async<unit> =
         async {
-            let! forceCloseTxId = node.ForceCloseChannel channelId
-            let txUri = BlockExplorer.GetTransaction currency forceCloseTxId
-            Console.WriteLine(
-                sprintf
-                    "Channel %s force-closed:%s%s"
-                    (ChannelId.ToString channelId)
-                    Environment.NewLine
-                    (txUri.ToString())
-            )
+            let! forceCloseTxIdResult = node.ForceCloseChannel channelId
+            Console.WriteLine (sprintf "Channel %s force closed" (ChannelId.ToString channelId))
+            match forceCloseTxIdResult with
+            | Ok forceCloseTxId ->
+                let txUri = BlockExplorer.GetTransaction currency forceCloseTxId
+                Console.WriteLine (
+                    sprintf
+                        "Funds recovered in this transaction:%s%s"
+                        Environment.NewLine
+                        (txUri.ToString ())
+                )
+            | Error ClosingBalanceBelowDustLimit ->
+                Console.WriteLine "Closing balance of channel was too small (below the \"dust\" limit) so no funds were recovered."
         }
 
     let MaybeForceCloseChannel
@@ -420,6 +424,57 @@ module LayerTwo =
                 }
         }
 
+    let ClaimFundsIfRemoteForceClosed
+        (channelStore: ChannelStore)
+        (channelInfo: ChannelInfo)
+        : Async<Async<seq<string>>> =
+        async {
+            let! closingTxInfoOpt = channelStore.CheckForClosingTx channelInfo.ChannelId
+            match closingTxInfoOpt with
+            | None ->
+                return async {
+                    return seq {
+                        yield! UserInteraction.DisplayLightningChannelStatus channelInfo
+                        yield "        channel is active"
+                    }
+                }
+            | Some (closingTxId, _closingTxHeightOpt) ->
+                return async {
+                    Console.WriteLine(sprintf "Channel %s has been force-closed by the counterparty.")
+                    Console.WriteLine "Account must be unlocked to recover funds."
+                    let password = UserInteraction.AskPassword false
+                    let nodeClient = Lightning.Connection.StartClient channelStore password
+                    let! recoveryTxStringResult =
+                        Lightning.Network.CreateRecoveryTxForRemoteForceClose
+                            (Node.Client nodeClient)
+                            channelInfo.ChannelId
+                            closingTxId
+                    match recoveryTxStringResult with
+                    | Ok recoveryTxString ->
+                        let! txIdString =
+                            UtxoCoin.Account.BroadcastRawTransaction
+                                channelStore.Currency
+                                recoveryTxString
+                        channelStore.DeleteChannel channelInfo.ChannelId
+                        let txUri = BlockExplorer.GetTransaction (channelStore.Account :> IAccount).Currency txIdString
+                        return seq {
+                            yield! UserInteraction.DisplayLightningChannelStatus channelInfo
+                            yield "        channel closed by counterparty"
+                            yield "        funds have been returned to wallet"
+                            yield sprintf "        recovery transaction is: %s" (txUri.ToString())
+                        }
+                    | Error ClosingBalanceBelowDustLimit ->
+                        channelStore.DeleteChannel channelInfo.ChannelId
+                        return seq {
+                            yield! UserInteraction.DisplayLightningChannelStatus channelInfo
+                            yield "        channel closed by counterparty"
+                            yield "        Local channel balance was too small (below the \"dust\" limit) so no funds were recovered."
+                        }
+
+                }
+        }
+
+
     let GetChannelStatuses (accounts: seq<IAccount>): seq<Async<Async<seq<string>>>> =
         seq {
             let normalUtxoAccounts = accounts.OfType<UtxoCoin.NormalUtxoAccount>()
@@ -445,15 +500,7 @@ module LayerTwo =
                                 fundingBroadcastButNotLockedData
                                 currency
                     | ChannelStatus.Active ->
-                        yield
-                            async {
-                                return async {
-                                    return seq {
-                                        yield! UserInteraction.DisplayLightningChannelStatus channelInfo
-                                        yield "        channel is active"
-                                    }
-                                }
-                            }
+                        yield ClaimFundsIfRemoteForceClosed channelStore channelInfo
                     | ChannelStatus.Broken ->
                         yield
                             async {
