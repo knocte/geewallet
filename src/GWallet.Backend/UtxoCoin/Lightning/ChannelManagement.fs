@@ -208,6 +208,9 @@ type ChannelStore(account: NormalUtxoAccount) =
                 "A channel can only end up in the wallet if it has commitments."
         commitments.LocalCommit.PublishableTxs.CommitTx.Value.ToHex()
 
+    member self.GetToSelfDelay (_channelId: ChannelIdentifier): uint16 =
+        raise <| NotImplementedException ()
+
     member self.CheckForClosingTx (channelId: ChannelIdentifier): Async<Option<string * Option<uint32>>> =
         async {
             let serializedChannel = self.LoadChannel channelId

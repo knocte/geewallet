@@ -542,6 +542,12 @@ type Node =
         | Server nodeServer -> nodeServer.Account
         :> IAccount
 
+    member self.CreateRecoveryTxForLocalForceClose
+        (_channelId: ChannelIdentifier)
+        (_commitmentTxString: string)
+        : Async<Result<string, ClosingBalanceBelowDustLimitError>> =
+        raise <| NotImplementedException ()
+
     member self.ForceCloseChannel
         (channelId: ChannelIdentifier)
         : Async<Result<string, ClosingBalanceBelowDustLimitError>> =
