@@ -669,6 +669,9 @@ type Node =
                 return Ok <| recoveryTransaction.ToHex ()
         }
 
+    member self.CheckForChannelFraudAndSendRevocationTx (_channelId: ChannelIdentifier): Async<Option<string>> =
+        raise <| NotImplementedException ()
+
 module public Connection =
     let public StartClient (channelStore: ChannelStore)
                            (password: string)
