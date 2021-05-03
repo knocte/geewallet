@@ -125,13 +125,6 @@ type ErrorResult =
         Error: ErrorInnerResult;
     }
 
-// we can delete this workaround below when this bug is fixed: https://github.com/romanz/electrs/issues/313
-type BuggyElectrsErrorResult =
-    {
-        Id: int
-        Error: string
-    }
-
 type RpcErrorCode =
     // see https://gitlab.com/nblockchain/geewallet/issues/110
     | ExcessiveResourceUsage = -101
@@ -156,41 +149,6 @@ type public ElectrumServerReturningErrorInJsonResponseException(message: string,
 
     // let's only use this property for the sake of a workaround for this: https://github.com/romanz/electrs/issues/313
     member internal __.ErrorMessage: string = message
-
-    member __.InternalErrors(): seq<ElectrumServerReturningErrorInJsonResponseException> =
-        let rec searchForOpenBracketFrom(openSearchIndex: int) = seq {
-            if openSearchIndex < message.Length then
-                let openIndex = message.IndexOf('{', openSearchIndex)
-                if openIndex <> -1 then
-                    let rec searchForCloseBracketFrom(closeSearchIndex: int) = seq {
-                        if closeSearchIndex < message.Length then
-                            let closeIndex = message.IndexOf('}', closeSearchIndex)
-                            if closeIndex <> -1 then
-                                yield message.[openIndex..closeIndex]
-                                yield! searchForCloseBracketFrom(closeIndex + 1)
-                    }
-                    yield! searchForCloseBracketFrom(openIndex + 1)
-                    yield! searchForOpenBracketFrom(openIndex + 1)
-        }
-        searchForOpenBracketFrom 0
-        |> Seq.choose (fun (possibleJsonString: string) ->
-            if possibleJsonString.Contains("\"") then
-                None
-            else
-                let possibleJsonString = possibleJsonString.Replace('\'', '"')
-                try
-                    let maybeError =
-                        JsonConvert.DeserializeObject<ErrorInnerResult>(
-                            possibleJsonString,
-                            Marshalling.PascalCase2LowercasePlusUnderscoreConversionSettings
-                        )
-                    if (not (Object.ReferenceEquals(maybeError, null))) then
-                        Some <| ElectrumServerReturningErrorInJsonResponseException(maybeError.Message, Some maybeError.Code)
-                    else
-                        None
-                with
-                | ex -> None
-        )
 
 type public ElectrumServerReturningErrorException(message: string, code: Option<int>,
                                                   originalRequest: string, originalResponse: string) =
@@ -337,30 +295,6 @@ type StratumClient (jsonRpcClient: JsonRpcTcpClient) =
     }
 
     static member private MaybeDeserializeToErrorAndThrow<'T> (resultTrimmed: string): unit =
-        // we can delete this if block below when this bug is fixed: https://github.com/romanz/electrs/issues/313
-        // FIXME: should we do it for any 'T? see https://gitlab.com/nblockchain/geewallet/-/jobs/1156866360 or https://gitlab.com/nblockchain/geewallet/-/jobs/1158282261
-        if typeof<'T> = typeof<BlockchainTransactionGetVerboseResult> then
-            let maybeBuggyError =
-                try
-                    let deserializedObj =
-                        JsonConvert.DeserializeObject<BuggyElectrsErrorResult> (
-                            resultTrimmed,
-                            Marshalling.PascalCase2LowercasePlusUnderscoreConversionSettings
-                        )
-                    if Object.ReferenceEquals(null, deserializedObj) || String.IsNullOrEmpty deserializedObj.Error then
-                        None
-                    else
-                        Some deserializedObj
-                with
-                | :? Newtonsoft.Json.JsonException ->
-                    None
-
-            match maybeBuggyError with
-            | None -> ()
-            | Some error ->
-                raise
-                <| ElectrumServerReturningErrorInJsonResponseException(error.Error, None)
-
         let maybeError =
             try
                 JsonConvert.DeserializeObject<ErrorResult>(resultTrimmed,

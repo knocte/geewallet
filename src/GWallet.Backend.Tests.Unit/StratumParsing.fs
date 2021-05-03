@@ -44,16 +44,6 @@ type StratumParsing() =
         Assert.That(ex.ErrorCode, Is.EqualTo (Some -32603))
 
     [<Test>]
-    member __.``deserialize a stratum error from a buggy electrs doesn't fail``() =
-        let errorResponse = "{\"error\":\"not indexed tx e3a1f9f835b5eaf46d7f8f171469b5b9a9578e071ed30d3e1a826a0a534e4f8b\",\"id\":0,\"jsonrpc\":\"2.0\"}"
-
-        let ex = Assert.Throws<ElectrumServerReturningErrorInJsonResponseException>(fun _ ->
-            StratumClient.Deserialize<BlockchainTransactionGetVerboseResult> errorResponse
-            |> ignore<BlockchainTransactionGetVerboseResult>
-        )
-        Assert.That(ex.ErrorCode, Is.EqualTo None)
-
-    [<Test>]
     member __.``blockchain.transaction.get(verbose) request serialization``() =
         let dummyHash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         let json = StratumRequestSerializer.BlockchainTransactionGetVerbose dummyHash
