@@ -114,27 +114,15 @@ module ElectrumClient =
 
                 // NOTE: The response returned by the electrum servers when the
                 // transaction doesn't exist is:
-                //
+                // electrumx:
                 // {"jsonrpc": "2.0", "error": {"code": 2, "message": "daemon error: DaemonError({'code': -5, 'message': 'No such mempool or blockchain transaction. Use gettransaction for wallet transactions.'})"}, "id": 0}
+                // electrs:
+                // { "jsonrpc": "2.0", "id": 0, "error": {"code":1,"message":"not indexed tx 3662c33c46ebed6d25e2b99a27c1c92f762b98d7d71bd0a6eeaa3cac2a679411"} }
 
-                let unknownTransactionOuterErrorCode = 2
-                let unknownTransactionInnerErrorCode = -5
-                if ex.ErrorCode = Some unknownTransactionOuterErrorCode then
-                    let innerErrorCodeFound =
-                        Seq.exists
-                            (
-                                fun (ex: ElectrumServerReturningErrorInJsonResponseException) ->
-                                    ex.ErrorCode = Some unknownTransactionInnerErrorCode
-                            )
-                            (ex.InternalErrors())
-                    if innerErrorCodeFound then
-                        return None
-                    else
-                        return raise <| FSharpUtil.ReRaise ex
-
-                elif ex.ErrorCode = None && ex.ErrorMessage.StartsWith "not indexed" then
+                let forwardedErrorCodeFromBitcoind = 2
+                let defaultErrorCode = 1
+                if ex.ErrorCode = Some forwardedErrorCodeFromBitcoind || ex.ErrorCode = Some defaultErrorCode then
                     return None
-
                 else
                     return raise <| FSharpUtil.ReRaise ex
         }
