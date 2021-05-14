@@ -134,7 +134,7 @@ type ChannelStore(account: NormalUtxoAccount) =
         Config.GetConfigDir self.Currency AccountKind.Normal
 
     member self.ChannelDir: DirectoryInfo =
-        Path.Combine (self.AccountDir.FullName, "LN")
+        Path.Combine (self.AccountDir.FullName, Settings.ConfigDirName)
         |> DirectoryInfo
 
     member self.ListChannelIds(): seq<ChannelIdentifier> =
@@ -209,8 +209,13 @@ type ChannelStore(account: NormalUtxoAccount) =
                 "A channel can only end up in the wallet if it has commitments."
         commitments.LocalCommit.PublishableTxs.CommitTx.Value.ToHex()
 
-    member self.GetToSelfDelay (_channelId: ChannelIdentifier): uint16 =
-        raise <| NotImplementedException ()
+    member self.GetToSelfDelay (channelId: ChannelIdentifier): uint16 =
+        let commitments =
+            let serializedChannel = self.LoadChannel channelId
+            UnwrapOption
+                serializedChannel.ChanState.Commitments
+                "A channel can only end up in the wallet if it has commitments."
+        commitments.LocalParams.ToSelfDelay.Value
 
     member self.CheckForClosingTx (channelId: ChannelIdentifier): Async<Option<string * Option<uint32>>> =
         async {

@@ -204,6 +204,29 @@ module FSharpUtil =
     let ListIntersect<'T> (list1: List<'T>) (list2: List<'T>) (offset: uint32): List<'T> =
         ListIntersectInternal list1 list2 offset [] 1
 
+    let SeqTryHeadTail<'T> (sequence: seq<'T>): Option<'T * seq<'T>> =
+        match Seq.tryHead sequence with
+        | None -> None
+        | Some head -> Some (head, Seq.tail sequence)
+
+    let rec SeqAsyncTryPick<'T, 'U> (sequence: seq<'T>)
+                                    (chooser: 'T -> Async<Option<'U>>)
+                                        : Async<Option<'U>> = async {
+        match SeqTryHeadTail sequence with
+        | None -> return None
+        | Some (head, tail) ->
+            let! choiceOpt = chooser head
+            match choiceOpt with
+            | None -> return! SeqAsyncTryPick tail chooser
+            | Some choice -> return Some choice
+    }
+
+    let ListAsyncTryPick<'T,'U> (list: list<'T>) (chooser: 'T -> Async<Option<'U>>) : Async<Option<'U>> =
+            SeqAsyncTryPick 
+                (list |> Seq.ofList) 
+                chooser
+
+
     let WithTimeout (timeSpan: TimeSpan) (job: Async<'R>): Async<Option<'R>> = async {
         let read = async {
             let! value = job

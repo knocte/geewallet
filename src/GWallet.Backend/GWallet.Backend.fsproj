@@ -87,6 +87,8 @@
     <Compile Include="UtxoCoin\Lightning\JsonMarshalling.fs" />
     <Compile Include="UtxoCoin\Lightning\SerializedChannel.fs" />
     <Compile Include="UtxoCoin\Lightning\ChannelManagement.fs" />
+    <Compile Include="UtxoCoin\Lightning\ForceCloseTransaction.fs" />
+    <Compile Include="UtxoCoin\Lightning\BreachDataManagement.fs" />
     <Compile Include="UtxoCoin\Lightning\Network.fs" />
     <Compile Include="UtxoCoin\Lightning\MsgStream.fs" />
     <Compile Include="UtxoCoin\Lightning\PeerNode.fs" />
@@ -96,6 +98,7 @@
     <Compile Include="UtxoCoin\Lightning\FundedChannel.fs" />
     <Compile Include="UtxoCoin\Lightning\ActiveChannel.fs" />
     <Compile Include="UtxoCoin\Lightning\ClosedChannel.fs" />
+    <Compile Include="UtxoCoin\Lightning\ChainWatcher.fs" />
     <Compile Include="UtxoCoin\Lightning\Node.fs" />
     <Compile Include="UtxoCoin\Lightning\PublicHelpers.fs" />
     <Compile Include="Ether\EtherExceptions.fs" />

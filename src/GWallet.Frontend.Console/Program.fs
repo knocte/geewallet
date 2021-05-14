@@ -386,11 +386,15 @@ let rec CheckArchivedAccountsAreEmpty(): bool =
 let rec ProgramMainLoop() =
     let activeAccounts = Account.GetAllActiveAccounts()
     let channelStatusJobs: seq<Async<Async<seq<string>>>> = LayerTwo.GetChannelStatuses activeAccounts
+    let revokedTxCheckJobs: seq<Async<Option<string>>> =
+        Lightning.ChainWatcher.CheckForChannelFraudsAndSendRevocationTx
+        <| activeAccounts.OfType<UtxoCoin.NormalUtxoAccount>()
+    let revokedTxCheckJob: Async<array<Option<string>>> = Async.Parallel revokedTxCheckJobs
     let channelInfoInteractionsJob: Async<array<Async<seq<string>>>> = Async.Parallel channelStatusJobs
     let displayAccountStatusesJob =
         UserInteraction.DisplayAccountStatuses(WhichAccount.All activeAccounts)
-    let channelInfoInteractions, accountStatusesLines =
-        AsyncExtensions.MixedParallel2 channelInfoInteractionsJob displayAccountStatusesJob
+    let channelInfoInteractions, accountStatusesLines, _ =
+        AsyncExtensions.MixedParallel3 channelInfoInteractionsJob displayAccountStatusesJob revokedTxCheckJob
         |> Async.RunSynchronously
 
     Console.WriteLine ()

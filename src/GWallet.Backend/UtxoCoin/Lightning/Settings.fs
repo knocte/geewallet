@@ -15,6 +15,8 @@ module Settings =
     // FIXME: this should return seq<> so that we can run Lightning on Litecoin too
     let Currency = Currency.BTC
 
+    let internal ConfigDirName = "LN"
+
     let internal PeerLimits: ChannelHandshakeLimits = {
         ForceChannelAnnouncementPreference = false
         MinFundingSatoshis = Money 100L
