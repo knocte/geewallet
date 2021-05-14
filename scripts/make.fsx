@@ -259,6 +259,7 @@ let RunTests (suite: string) =
             "ChannelLocalForceClosing"
             "ChannelRemoteForceClosingByFunder"
             "ChannelRemoteForceClosingByFundee"
+            "Revocation"
         ]
 
     let geewallet2geewalletTestNamePrefix, funderSuffix, fundeeSuffix = "G2G_", "_Funder", "_Fundee"

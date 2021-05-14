@@ -425,6 +425,24 @@ and internal ActiveChannel =
                     return Error <| InvalidRevokeAndAck
                         (brokenChannel, err)
                 | Ok () ->
+                    let channelPrivKeys = connectedChannel.Channel.ChannelPrivKeys
+                    let commitments = self.Commitments()
+                    let network = connectedChannel.Network
+                    let account = connectedChannel.Account
+
+                    let perCommitmentSecret = theirRevokeAndAckMsg.PerCommitmentSecret
+
+                    let breachStore = BreachDataStore account
+                    let! breachData =
+                            breachStore
+                                .LoadBreachData(connectedChannel.ChannelId)
+                                .InsertRevokedCommitment perCommitmentSecret
+                                                         commitments
+                                                         channelPrivKeys
+                                                         network
+                                                         account
+                    breachStore.SaveBreachData breachData
+
                     connectedChannelAfterRevokeAndAck.SaveToWallet()
                     let activeChannel = { ConnectedChannel = connectedChannelAfterRevokeAndAck }
                     return Ok activeChannel
@@ -551,4 +569,9 @@ and internal ActiveChannel =
             | Error err -> return Error <| RecvMonoHopPaymentError.SendCommit err
             | Ok activeChannelAfterCommitSent -> return Ok activeChannelAfterCommitSent
     }
+
+    // The Commitments field will always be Some when we have established a channel
+    member internal self.Commitments(): Commitments =
+        let commitmentsOpt = self.ConnectedChannel.Channel.Channel.State.Commitments
+        UnwrapOption commitmentsOpt "no commitment available"
 

@@ -52,8 +52,8 @@ module public Network =
     let public ReceiveLightningEvent (nodeServer: NodeServer) = nodeServer.ReceiveLightningEvent
     let public AcceptLockChannelFunding (nodeServer: NodeServer) = nodeServer.AcceptLockChannelFunding
 
-    let public CheckForChannelFraudAndSendRevocationTx (_node: Node) =
-        raise <| NotImplementedException ()
+    let public CheckForChannelFraudAndSendRevocationTx (node: Node) =
+        node.CheckForChannelFraudAndSendRevocationTx
 
     let public CreateRecoveryTxForRemoteForceClose (node: Node) =
         node.CreateRecoveryTxForRemoteForceClose

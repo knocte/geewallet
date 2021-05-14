@@ -673,6 +673,11 @@ type Node =
                 return Ok <| recoveryTransaction.ToHex ()
         }
 
+    member internal self.CheckForChannelFraudAndSendRevocationTx (channelId: ChannelIdentifier)
+                                                                     : Async<Option<string>> =
+        ChainWatcher.CheckForChannelFraudAndSendRevocationTx channelId
+                                                             self.ChannelStore
+
 module public Connection =
     let public StartClient (channelStore: ChannelStore)
                            (password: string)
