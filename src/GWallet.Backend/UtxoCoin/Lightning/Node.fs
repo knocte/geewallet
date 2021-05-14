@@ -543,68 +543,63 @@ type Node =
         :> IAccount
 
     member self.CreateRecoveryTxForLocalForceClose
-        (_channelId: ChannelIdentifier)
-        (_commitmentTxString: string)
-        : Async<Result<string, ClosingBalanceBelowDustLimitError>> =
-        raise <| NotImplementedException ()
+        (channelId: ChannelIdentifier)
+        (commitmentTxString: string)
+        : Async<Result<string, ClosingBalanceBelowDustLimitError>> = async {
+            let nodeMasterPrivKey =
+                match self with
+                | Client nodeClient -> nodeClient.NodeMasterPrivKey
+                | Server nodeServer -> nodeServer.NodeMasterPrivKey
+            let currency = self.Account.Currency
+            let serializedChannel = self.ChannelStore.LoadChannel channelId
+            let! recoveryTransactionString = async {
+                let network =
+                    UtxoCoin.Account.GetNetwork currency
+                let commitmentTx =
+                    Transaction.Parse(commitmentTxString, network)
+                let commitments =
+                    serializedChannel.Commitments
+                let channelPrivKeys =
+                    let channelIndex = serializedChannel.ChannelIndex
+                    nodeMasterPrivKey.ChannelPrivKeys channelIndex
+                let targetAddress =
+                    let originAddress = self.Account.PublicAddress
+                    BitcoinAddress.Create(originAddress, network)
+                let! feeRate = async {
+                    let! feeEstimator = FeeEstimator.Create currency
+                    return feeEstimator.FeeRatePerKw
+                }
+                let transactionBuilderResult =
+                    ForceCloseFundsRecovery.tryGetFundsFromLocalCommitmentTx
+                        commitments.LocalParams
+                        commitments.RemoteParams
+                        commitments.FundingScriptCoin
+                        channelPrivKeys
+                        network
+                        commitmentTx
+                match transactionBuilderResult with
+                | Error (LocalCommitmentTxRecoveryError.InvalidCommitmentTx invalidCommitmentTxError) ->
+                    return failwith ("invalid commitment tx for force-closing: " + invalidCommitmentTxError.Message)
+                | Error LocalCommitmentTxRecoveryError.BalanceBelowDustLimit ->
+                    return Error <| ClosingBalanceBelowDustLimit
+                | Ok transactionBuilder ->
+                    transactionBuilder.SendAll targetAddress |> ignore
+                    let fee = transactionBuilder.EstimateFees (feeRate.AsNBitcoinFeeRate())
+                    transactionBuilder.SendFees fee |> ignore
+                    let recoveryTransaction = transactionBuilder.BuildTransaction true
+                    return Ok <| recoveryTransaction.ToHex()
+            }
+            return recoveryTransactionString
+        }
 
     member self.ForceCloseChannel
         (channelId: ChannelIdentifier)
         : Async<Result<string, ClosingBalanceBelowDustLimitError>> =
-        let forceCloseUsingCommitmentTx
-            (commitmentTxString: string)
-            : Async<Result<string, ClosingBalanceBelowDustLimitError>> =
-            async {
-                let nodeMasterPrivKey =
-                    match self with
-                    | Client nodeClient -> nodeClient.NodeMasterPrivKey
-                    | Server nodeServer -> nodeServer.NodeMasterPrivKey
-                let currency = self.Account.Currency
-                let serializedChannel = self.ChannelStore.LoadChannel channelId
-                let! recoveryTransactionString = async {
-                    let network =
-                        UtxoCoin.Account.GetNetwork currency
-                    let commitmentTx =
-                        Transaction.Parse(commitmentTxString, network)
-                    let commitments =
-                        serializedChannel.Commitments
-                    let channelPrivKeys =
-                        let channelIndex = serializedChannel.ChannelIndex
-                        nodeMasterPrivKey.ChannelPrivKeys channelIndex
-                    let targetAddress =
-                        let originAddress = self.Account.PublicAddress
-                        BitcoinAddress.Create(originAddress, network)
-                    let! feeRate = async {
-                        let! feeEstimator = FeeEstimator.Create currency
-                        return feeEstimator.FeeRatePerKw
-                    }
-                    let transactionBuilderResult =
-                        ForceCloseFundsRecovery.tryGetFundsFromLocalCommitmentTx
-                            commitments.LocalParams
-                            commitments.RemoteParams
-                            commitments.FundingScriptCoin
-                            channelPrivKeys
-                            network
-                            commitmentTx
-                    match transactionBuilderResult with
-                    | Error (LocalCommitmentTxRecoveryError.InvalidCommitmentTx invalidCommitmentTxError) ->
-                        return failwith ("invalid commitment tx for force-closing: " + invalidCommitmentTxError.Message)
-                    | Error LocalCommitmentTxRecoveryError.BalanceBelowDustLimit ->
-                        return Error <| ClosingBalanceBelowDustLimit
-                    | Ok transactionBuilder ->
-                        transactionBuilder.SendAll targetAddress |> ignore
-                        let fee = transactionBuilder.EstimateFees (feeRate.AsNBitcoinFeeRate())
-                        transactionBuilder.SendFees fee |> ignore
-                        let recoveryTransaction = transactionBuilder.BuildTransaction true
-                        return Ok <| recoveryTransaction.ToHex()
-                }
-                return recoveryTransactionString
-            }
         async {
             let commitmentTxString = self.ChannelStore.GetCommitmentTx channelId
             let serializedChannel = self.ChannelStore.LoadChannel channelId
             let! forceCloseTxId = UtxoCoin.Account.BroadcastRawTransaction self.Account.Currency commitmentTxString
-            let! recoveryTxStringResult = forceCloseUsingCommitmentTx commitmentTxString
+            let! recoveryTxStringResult = self.CreateRecoveryTxForLocalForceClose channelId commitmentTxString
             match recoveryTxStringResult with
             | Error err ->
                 self.ChannelStore.DeleteChannel channelId
