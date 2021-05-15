@@ -1033,7 +1033,7 @@ type LN() =
         return ()
     }
 
-    [<Category("G2G_Revocation_Fundee")>]
+    [<Category "G2G_Revocation_Fundee">]
     [<Test>]
     member __.``can revoke commitment tx (fundee)``() = Async.RunSynchronously <| async {
         use! walletInstance = ServerWalletInstance.New Config.FundeeLightningIPEndpoint (Some Config.FundeeAccountsPrivateKey)
