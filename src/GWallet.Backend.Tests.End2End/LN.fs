@@ -684,8 +684,7 @@ type LN() =
             match closingInfoOpt with
             | Some (closingTxIdString, Some _closingTxHeight) ->
                 return!
-                    Lightning.Network.CreateRecoveryTxForRemoteForceClose
-                        (Node.Server serverWallet.NodeServer)
+                    (Node.Server serverWallet.NodeServer).CreateRecoveryTxForRemoteForceClose
                         channelId
                         closingTxIdString
             | _ ->
@@ -745,8 +744,7 @@ type LN() =
         let! closingInfoOpt = clientWallet.ChannelStore.CheckForClosingTx channelId
         let closingTxIdString, _closingTxHeightOpt = UnwrapOption closingInfoOpt "force close tx not found on blockchain"
         let! recoveryTxStringOpt =
-            Lightning.Network.CreateRecoveryTxForRemoteForceClose
-                (Node.Client clientWallet.NodeClient)
+            (Node.Client clientWallet.NodeClient).CreateRecoveryTxForRemoteForceClose
                 channelId
                 closingTxIdString
         let recoveryTxString = UnwrapResult recoveryTxStringOpt "no funds could be recovered"
