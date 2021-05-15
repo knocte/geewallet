@@ -1083,8 +1083,7 @@ type LN() =
         // attempt to broadcast tx which spends the theft tx
         let rec checkForClosingTx() = async {
             let! txIdOpt =
-                Lightning.Network.CheckForChannelFraudAndSendRevocationTx
-                    (Node.Server walletInstance.NodeServer)
+                (Node.Server walletInstance.NodeServer).CheckForChannelFraudAndSendRevocationTx
                     channelId
             match txIdOpt with
             | None ->
