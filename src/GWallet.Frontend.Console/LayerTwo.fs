@@ -445,8 +445,7 @@ module LayerTwo =
                     let password = UserInteraction.AskPassword false
                     let nodeClient = Lightning.Connection.StartClient channelStore password
                     let! recoveryTxStringResult =
-                        Lightning.Network.CreateRecoveryTxForRemoteForceClose
-                            (Node.Client nodeClient)
+                        (Node.Client nodeClient).CreateRecoveryTxForRemoteForceClose
                             channelInfo.ChannelId
                             closingTxId
                     match recoveryTxStringResult with
