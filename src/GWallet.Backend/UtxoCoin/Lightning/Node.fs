@@ -542,12 +542,10 @@ type Node =
         | Server nodeServer -> nodeServer.Account
         :> IAccount
 
-    member self.ForceCloseChannel
+    member self.CreateRecoveryTxForLocalForceClose
         (channelId: ChannelIdentifier)
+        (commitmentTxString: string)
         : Async<Result<string, ClosingBalanceBelowDustLimitError>> =
-        let forceCloseUsingCommitmentTx
-            (commitmentTxString: string)
-            : Async<Result<string, ClosingBalanceBelowDustLimitError>> =
             async {
                 let nodeMasterPrivKey =
                     match self with
@@ -594,11 +592,15 @@ type Node =
                 }
                 return recoveryTransactionString
             }
+
+    member self.ForceCloseChannel
+        (channelId: ChannelIdentifier)
+        : Async<Result<string, ClosingBalanceBelowDustLimitError>> =
         async {
             let commitmentTxString = self.ChannelStore.GetCommitmentTx channelId
             let serializedChannel = self.ChannelStore.LoadChannel channelId
             let! forceCloseTxId = UtxoCoin.Account.BroadcastRawTransaction self.Account.Currency commitmentTxString
-            let! recoveryTxStringResult = forceCloseUsingCommitmentTx commitmentTxString
+            let! recoveryTxStringResult = self.CreateRecoveryTxForLocalForceClose channelId commitmentTxString
             match recoveryTxStringResult with
             | Error err ->
                 self.ChannelStore.DeleteChannel channelId
