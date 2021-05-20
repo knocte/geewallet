@@ -438,7 +438,7 @@ module LayerTwo =
                         yield "        channel is active"
                     }
                 }
-            | Some (closingTxId, _closingTxHeightOpt) ->
+            | Some (closingTxId, closingTxHeightOpt) ->
                 return async {
                     Console.WriteLine(sprintf "Channel %s has been force-closed by the counterparty." (ChannelId.ToString channelInfo.ChannelId))
                     Console.WriteLine "Account must be unlocked to recover funds."
@@ -448,6 +448,8 @@ module LayerTwo =
                         (Node.Client nodeClient).CreateRecoveryTxForRemoteForceClose
                             channelInfo.ChannelId
                             closingTxId
+                            // only use CPFP if closing transaction has not been confirmed yet
+                            closingTxHeightOpt.IsNone
                     match recoveryTxStringResult with
                     | Ok recoveryTxString ->
                         let! txIdString =

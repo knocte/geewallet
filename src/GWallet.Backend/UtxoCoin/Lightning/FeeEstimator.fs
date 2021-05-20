@@ -25,6 +25,22 @@ type internal FeeEstimator =
         return { FeeRatePerKw = feeRatePerKw }
     }
 
+    static member EstimateCpfpFee
+        (transactionBuilder: TransactionBuilder)
+        (feeRate: FeeRatePerKw)
+        (parentTx: Transaction)
+        (parentScriptCoin: ScriptCoin)
+        : Money =
+        let feeRate = feeRate.AsNBitcoinFeeRate()
+        let childTxFee = transactionBuilder.EstimateFees feeRate
+        let requiredParentTxFee = feeRate.GetFee parentTx
+        let actualParentTxFee =
+            parentTx.GetFee [| parentScriptCoin :> ICoin |]
+        if requiredParentTxFee > actualParentTxFee then
+            childTxFee + requiredParentTxFee - actualParentTxFee
+        else
+            childTxFee
+
     interface IFeeEstimator with
         member self.GetEstSatPer1000Weight(_: ConfirmationTarget) =
             self.FeeRatePerKw

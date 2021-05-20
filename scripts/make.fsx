@@ -194,9 +194,7 @@ let JustBuild binaryConfig maybeConstant =
         | None -> defineConstantsFromBuildConfig
     let configOptions =
         if allDefineConstants.Any() then
-            // FIXME: we shouldn't override the project's DefineConstants, but rather set "ExtraDefineConstants"
-            // from the command line, and merge them later in the project file: see https://stackoverflow.com/a/32326853/544947
-            sprintf "%s;DefineConstants=%s" configOption (String.Join(";", allDefineConstants))
+            sprintf "%s;ExtraDefineConstants=%s" configOption (String.Join(";", allDefineConstants))
         else
             configOption
     let buildProcess = Process.Execute ({ Command = buildTool.Value; Arguments = configOptions }, Echo.All)
@@ -319,6 +317,7 @@ let RunTests (suite: string) =
             "ChannelRemoteForceClosingByFunder"
             "ChannelRemoteForceClosingByFundee"
             "Revocation"
+            "CPFP"
         ]
 
     let geewallet2geewalletTestNamePrefix, funderSuffix, fundeeSuffix = "G2G_", "_Funder", "_Fundee"

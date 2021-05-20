@@ -104,7 +104,7 @@ type private WalletInstance (password: string, channelStore: ChannelStore) =
 
         // fund geewallet
         let geewalletAccountAmount = Money (25m, MoneyUnit.BTC)
-        let feeRate = FeeRatePerKw 2500u
+        let! feeRate = ElectrumServer.EstimateFeeRate()
         let! _txid = lnd.SendCoins geewalletAccountAmount self.Address feeRate
 
         // wait for lnd's transaction to appear in mempool

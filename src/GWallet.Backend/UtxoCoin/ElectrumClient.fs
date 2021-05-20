@@ -7,6 +7,10 @@ open GWallet.Backend.FSharpUtil.UwpHacks
 
 module ElectrumClient =
 
+#if DEBUG
+    let mutable RegTestFakeFeeRate = 0.0002m
+#endif
+
     let private Init (fqdn: string) (port: uint32): Async<StratumClient> =
         let jsonRpcClient = new JsonRpcTcpClient(fqdn, port)
         let stratumClient = new StratumClient(jsonRpcClient)
@@ -153,12 +157,14 @@ module ElectrumClient =
     }
 
     let EstimateFee (numBlocksTarget: int) (stratumServer: Async<StratumClient>): Async<decimal> =
+#if DEBUG
         if Config.BitcoinNet() = NBitcoin.Network.RegTest then
             // when running in regtest mode we don't contact the electrum server to request the fee but instead return
             // a hard-coded value. This is because electrum gets its fee rate from bitcoind but bitcoind is usually not
             // able to estimate fee rates in regtest mode, so the electrum request would fail
-            async { return 0.0005m }
+            async { return RegTestFakeFeeRate }
         else
+#endif
             EstimateFeeInternal numBlocksTarget stratumServer
 
     let BroadcastTransaction (transactionInHex: string) (stratumServer: Async<StratumClient>) = async {

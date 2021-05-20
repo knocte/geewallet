@@ -65,6 +65,7 @@ type LN() =
 
             do! lnd.FundByMining bitcoind
 
+            let! feeRate = ElectrumServer.EstimateFeeRate()
             let acceptChannelTask = Lightning.Network.AcceptChannel serverWallet.NodeServer
             let openChannelTask = async {
                 do! lnd.ConnectTo serverWallet.NodeEndPoint
@@ -72,7 +73,7 @@ type LN() =
                     lnd.OpenChannel
                         serverWallet.NodeEndPoint
                         (Money(0.002m, MoneyUnit.BTC))
-                        (FeeRatePerKw 666u)
+                        feeRate
             }
 
             let! acceptChannelRes, openChannelRes = AsyncExtensions.MixedParallel2 acceptChannelTask openChannelTask
@@ -687,6 +688,7 @@ type LN() =
                     (Node.Server serverWallet.NodeServer).CreateRecoveryTxForRemoteForceClose
                         channelId
                         closingTxIdString
+                        false
             | _ ->
                 do! Async.Sleep 2000
                 return! waitForRemoteForceClose()
@@ -747,6 +749,7 @@ type LN() =
             (Node.Client clientWallet.NodeClient).CreateRecoveryTxForRemoteForceClose
                 channelId
                 closingTxIdString
+                false
         let recoveryTxString = UnwrapResult recoveryTxStringOpt "no funds could be recovered"
         let! _recoveryTxId =
             UtxoCoin.Account.BroadcastRawTransaction
@@ -868,7 +871,7 @@ type LN() =
 
         // fund geewallet
         let geewalletAccountAmount = Money (25m, MoneyUnit.BTC)
-        let feeRate = FeeRatePerKw 2500u
+        let! feeRate = ElectrumServer.EstimateFeeRate()
         let! _txid = lnd.SendCoins geewalletAccountAmount walletInstance.Address feeRate
 
         // wait for lnd's transaction to appear in mempool
@@ -1002,6 +1005,7 @@ type LN() =
             (Node.Client walletInstance.NodeClient).CreateRecoveryTxForLocalForceClose
                 channelId
                 commitmentTx
+                false
         let spendingTxString = UnwrapResult spendingTxStringRes "failed to create spending tx"
         let! spendingTxIdOpt = async {
             try
@@ -1097,5 +1101,195 @@ type LN() =
             walletInstance.WaitForBalance amount
 
         return ()
+    }
+
+    [<Category "G2G_CPFP_Funder">]
+    [<Test>]
+    member __.``CPFP is used when force-closing channel (funder)``() = Async.RunSynchronously <| async {
+        let! channelId, clientWallet, bitcoind, electrumServer, lnd, fundingAmount =
+            try
+                OpenChannelWithFundee (Some Config.FundeeNodeEndpoint)
+            with
+            | ex ->
+                Assert.Inconclusive (
+                    sprintf
+                        "CPFP inconclusive because Channel open failed, fix this first: %s"
+                        (ex.ToString())
+                )
+                failwith "unreachable"
+
+        try
+            do! SendMonoHopPayments clientWallet channelId fundingAmount
+        with
+        | ex ->
+            Assert.Inconclusive (
+                sprintf
+                    "CPFP inconclusive because sending of monohop payments failed, fix this first: %s"
+                    (ex.ToString())
+            )
+            failwith "unreachable"
+
+        let! oldFeeRate = ElectrumServer.EstimateFeeRate()
+
+        let newFeeRate = oldFeeRate * 5u
+        ElectrumServer.SetEstimatedFeeRate newFeeRate
+
+        let commitmentTxString = clientWallet.ChannelStore.GetCommitmentTx channelId
+        let! _commitmentTxIdString = Account.BroadcastRawTransaction Currency.BTC commitmentTxString
+
+        let commitmentTx = Transaction.Parse(commitmentTxString, Network.RegTest)
+        let! commitmentTxFee = FeesHelper.GetFeeFromTransaction commitmentTx
+        let commitmentTxFeeRate =
+            FeeRatePerKw.FromFeeAndVSize(commitmentTxFee, uint64 (commitmentTx.GetVirtualSize()))
+        assert FeesHelper.FeeRatesApproxEqual commitmentTxFeeRate oldFeeRate
+
+        let! recoveryTxStringNoCpfpOpt =
+            (Node.Client clientWallet.NodeClient).CreateRecoveryTxForLocalForceClose
+                channelId
+                commitmentTxString
+                false
+        let recoveryTxStringNoCpfp =
+            UnwrapResult
+                recoveryTxStringNoCpfpOpt
+                "force close failed to recover funds from the commitment tx"
+        let recoveryTxNoCpfp = Transaction.Parse(recoveryTxStringNoCpfp, Network.RegTest)
+        let! recoveryTxFeeNoCpfp = FeesHelper.GetFeeFromTransaction recoveryTxNoCpfp
+        let recoveryTxFeeRateNoCpfp =
+            FeeRatePerKw.FromFeeAndVSize(recoveryTxFeeNoCpfp, uint64 (recoveryTxNoCpfp.GetVirtualSize()))
+        assert FeesHelper.FeeRatesApproxEqual recoveryTxFeeRateNoCpfp newFeeRate
+        let combinedFeeRateNoCpfp =
+            FeeRatePerKw.FromFeeAndVSize(
+                recoveryTxFeeNoCpfp + commitmentTxFee,
+                uint64 (recoveryTxNoCpfp.GetVirtualSize() + commitmentTx.GetVirtualSize())
+            )
+        assert (not <| FeesHelper.FeeRatesApproxEqual combinedFeeRateNoCpfp oldFeeRate)
+        assert (not <| FeesHelper.FeeRatesApproxEqual combinedFeeRateNoCpfp newFeeRate)
+
+        let! recoveryTxStringWithCpfpOpt =
+            (Node.Client clientWallet.NodeClient).CreateRecoveryTxForLocalForceClose
+                channelId
+                commitmentTxString
+                true
+        let recoveryTxStringWithCpfp =
+            UnwrapResult
+                recoveryTxStringWithCpfpOpt
+                "force close failed to recover funds from the commitment tx"
+        let recoveryTxWithCpfp = Transaction.Parse(recoveryTxStringWithCpfp, Network.RegTest)
+        let! recoveryTxFeeWithCpfp = FeesHelper.GetFeeFromTransaction recoveryTxWithCpfp
+        let recoveryTxFeeRateWithCpfp =
+            FeeRatePerKw.FromFeeAndVSize(recoveryTxFeeWithCpfp, uint64 (recoveryTxWithCpfp.GetVirtualSize()))
+        assert (not <| FeesHelper.FeeRatesApproxEqual recoveryTxFeeRateWithCpfp oldFeeRate)
+        assert (not <| FeesHelper.FeeRatesApproxEqual recoveryTxFeeRateWithCpfp newFeeRate)
+        let combinedFeeRateWithCpfp =
+            FeeRatePerKw.FromFeeAndVSize(
+                recoveryTxFeeWithCpfp + commitmentTxFee,
+                uint64 (recoveryTxWithCpfp.GetVirtualSize() + commitmentTx.GetVirtualSize())
+            )
+        assert FeesHelper.FeeRatesApproxEqual combinedFeeRateWithCpfp newFeeRate
+
+        // Give the fundee time to see the force-close tx
+        do! Async.Sleep 5000
+
+        TearDown clientWallet lnd electrumServer bitcoind
+    }
+
+    [<Category "G2G_CPFP_Fundee">]
+    [<Test>]
+    member __.``CPFP is used when force-closing channel (fundee)``() = Async.RunSynchronously <| async {
+        let! serverWallet, channelId =
+            try
+                AcceptChannelFromGeewalletFunder ()
+            with
+            | ex ->
+                Assert.Inconclusive (
+                    sprintf
+                        "Channel remote-force-closing inconclusive because Channel accept failed, fix this first: %s"
+                        (ex.ToString())
+                )
+                failwith "unreachable"
+
+        try
+            do! ReceiveMonoHopPayments serverWallet channelId
+        with
+        | ex ->
+            Assert.Inconclusive (
+                sprintf
+                    "CPFP inconclusive because receiving of monohop payments failed, fix this first: %s"
+                    (ex.ToString())
+            )
+            failwith "unreachable"
+
+        let! oldFeeRate = ElectrumServer.EstimateFeeRate()
+        let newFeeRate = oldFeeRate * 5u
+        ElectrumServer.SetEstimatedFeeRate newFeeRate
+
+        let rec waitForForceClose(): Async<string> = async {
+            let! closingTxInfoOpt = serverWallet.ChannelStore.CheckForClosingTx channelId
+            match closingTxInfoOpt with
+            | None ->
+                do! Async.Sleep 500
+                return! waitForForceClose()
+            | Some (forceCloseTxIdString, _blockHeightOpt) ->
+                return forceCloseTxIdString
+        }
+        let! forceCloseTxIdString = waitForForceClose()
+        let! forceCloseTxString =
+            Server.Query
+                Currency.BTC
+                (QuerySettings.Default ServerSelectionMode.Fast)
+                (ElectrumClient.GetBlockchainTransaction forceCloseTxIdString)
+                None
+
+        let forceCloseTx = Transaction.Parse(forceCloseTxString, Network.RegTest)
+        let! forceCloseTxFee = FeesHelper.GetFeeFromTransaction forceCloseTx
+        let forceCloseTxFeeRate =
+            FeeRatePerKw.FromFeeAndVSize(forceCloseTxFee, uint64 (forceCloseTx.GetVirtualSize()))
+        assert FeesHelper.FeeRatesApproxEqual forceCloseTxFeeRate oldFeeRate
+
+        let! recoveryTxStringNoCpfpRes =
+            (Node.Server serverWallet.NodeServer).CreateRecoveryTxForRemoteForceClose
+                channelId
+                (forceCloseTx.GetHash().ToString())
+                false
+        let recoveryTxStringNoCpfp =
+            UnwrapResult
+                recoveryTxStringNoCpfpRes
+                "force close failed to recover funds from the commitment tx"
+        let recoveryTxNoCpfp = Transaction.Parse(recoveryTxStringNoCpfp, Network.RegTest)
+        let! recoveryTxFeeNoCpfp = FeesHelper.GetFeeFromTransaction recoveryTxNoCpfp
+        let recoveryTxFeeRateNoCpfp =
+            FeeRatePerKw.FromFeeAndVSize(recoveryTxFeeNoCpfp, uint64 (recoveryTxNoCpfp.GetVirtualSize()))
+        assert FeesHelper.FeeRatesApproxEqual recoveryTxFeeRateNoCpfp newFeeRate
+        let combinedFeeRateNoCpfp =
+            FeeRatePerKw.FromFeeAndVSize(
+                recoveryTxFeeNoCpfp + forceCloseTxFee,
+                uint64 (recoveryTxNoCpfp.GetVirtualSize() + forceCloseTx.GetVirtualSize())
+            )
+        assert (not <| FeesHelper.FeeRatesApproxEqual combinedFeeRateNoCpfp oldFeeRate)
+        assert (not <| FeesHelper.FeeRatesApproxEqual combinedFeeRateNoCpfp newFeeRate)
+
+        let! recoveryTxStringWithCpfpRes =
+            (Node.Server serverWallet.NodeServer).CreateRecoveryTxForRemoteForceClose
+                channelId
+                (forceCloseTx.GetHash().ToString())
+                true
+        let recoveryTxStringWithCpfp =
+            UnwrapResult
+                recoveryTxStringWithCpfpRes
+                "force close failed to recover funds from the commitment tx"
+        let recoveryTxWithCpfp = Transaction.Parse(recoveryTxStringWithCpfp, Network.RegTest)
+        let! recoveryTxFeeWithCpfp = FeesHelper.GetFeeFromTransaction recoveryTxWithCpfp
+        let recoveryTxFeeRateWithCpfp =
+            FeeRatePerKw.FromFeeAndVSize(recoveryTxFeeWithCpfp, uint64 (recoveryTxWithCpfp.GetVirtualSize()))
+        assert (not <| FeesHelper.FeeRatesApproxEqual recoveryTxFeeRateWithCpfp oldFeeRate)
+        assert (not <| FeesHelper.FeeRatesApproxEqual recoveryTxFeeRateWithCpfp newFeeRate)
+        let combinedFeeRateWithCpfp =
+            FeeRatePerKw.FromFeeAndVSize(
+                recoveryTxFeeWithCpfp + forceCloseTxFee,
+                uint64 (recoveryTxWithCpfp.GetVirtualSize() + forceCloseTx.GetVirtualSize())
+            )
+        assert FeesHelper.FeeRatesApproxEqual combinedFeeRateWithCpfp newFeeRate
+
+        (serverWallet :> IDisposable).Dispose()
     }
 

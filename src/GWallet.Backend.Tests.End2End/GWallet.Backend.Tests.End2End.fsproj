@@ -62,6 +62,7 @@
     </Compile>
     <Compile Include="Config.fs" />
     <Compile Include="WalletInstance.fs" />
+    <Compile Include="FeesHelper.fs" />
     <Compile Include="LN.fs" />
     <None Include="packages.config" />
   </ItemGroup>
