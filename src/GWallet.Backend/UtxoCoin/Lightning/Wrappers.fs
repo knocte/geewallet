@@ -58,6 +58,10 @@ type MonoHopUnidirectionalChannel =
     internal {
         Channel: Channel
     }
+
+    // 1 means actually 3x here, for more info see https://github.com/joemphilips/DotNetLightning/commit/0914d9e609d0a93bed50de1636e97590e9ff5aaa#diff-5545b0c089cff9618299dfafd5d9fa1d97b6762e4f977b78625f3c8c7266f5faR341
+    static member internal DefaultMaxFeeRateMismatchRatio: float = 1.
+
     static member internal Create (nodeId: NodeId)
                                   (account: UtxoCoin.NormalUtxoAccount)
                                   (nodeMasterPrivKey: NodeMasterPrivKey)
@@ -73,7 +77,8 @@ type MonoHopUnidirectionalChannel =
             let channelOptions: DotNetLightning.Utils.ChannelOptions = {
                 AnnounceChannel = false
                 FeeProportionalMillionths = 100u
-                MaxFeeRateMismatchRatio = 1.
+                MaxFeeRateMismatchRatio =
+                    MonoHopUnidirectionalChannel.DefaultMaxFeeRateMismatchRatio
                 ShutdownScriptPubKey = Some shutdownScriptPubKey
             }
             {

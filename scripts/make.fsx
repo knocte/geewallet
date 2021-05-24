@@ -318,6 +318,7 @@ let RunTests (suite: string) =
             "ChannelRemoteForceClosingByFundee"
             "Revocation"
             "CPFP"
+            "UpdateFeeMsg"
         ]
 
     let geewallet2geewalletTestNamePrefix, funderSuffix, fundeeSuffix = "G2G_", "_Funder", "_Fundee"
