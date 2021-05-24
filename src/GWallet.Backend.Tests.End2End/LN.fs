@@ -159,11 +159,14 @@ type LN() =
 
     let SendMonoHopPayments (clientWallet: ClientWalletInstance) channelId fundingAmount =
         async {
-            let channelInfo = clientWallet.ChannelStore.ChannelInfo channelId
+            let channelInfoBeforeAnyPayment = clientWallet.ChannelStore.ChannelInfo channelId
+            match channelInfoBeforeAnyPayment.Status with
+            | ChannelStatus.Active -> ()
+            | status -> failwith (SPrintF1 "unexpected channel status. Expected Active, got %A" status)
 
             let! sendMonoHopPayment1Res =
                 let transferAmount =
-                    let accountBalance = Money(channelInfo.SpendableBalance, MoneyUnit.BTC)
+                    let accountBalance = Money(channelInfoBeforeAnyPayment.SpendableBalance, MoneyUnit.BTC)
                     TransferAmount (walletToWalletTestPayment1Amount.ToDecimal MoneyUnit.BTC, accountBalance.ToDecimal MoneyUnit.BTC, Currency.BTC)
                 Lightning.Network.SendMonoHopPayment
                     clientWallet.NodeClient
@@ -172,7 +175,7 @@ type LN() =
             UnwrapResult sendMonoHopPayment1Res "SendMonoHopPayment failed"
 
             let channelInfoAfterPayment1 = clientWallet.ChannelStore.ChannelInfo channelId
-            match channelInfo.Status with
+            match channelInfoAfterPayment1.Status with
             | ChannelStatus.Active -> ()
             | status -> failwith (SPrintF1 "unexpected channel status. Expected Active, got %A" status)
 
@@ -181,7 +184,7 @@ type LN() =
 
             let! sendMonoHopPayment2Res =
                 let transferAmount =
-                    let accountBalance = Money(channelInfo.SpendableBalance, MoneyUnit.BTC)
+                    let accountBalance = Money(channelInfoAfterPayment1.SpendableBalance, MoneyUnit.BTC)
                     TransferAmount (
                         walletToWalletTestPayment2Amount.ToDecimal MoneyUnit.BTC,
                         accountBalance.ToDecimal MoneyUnit.BTC, Currency.BTC
@@ -193,7 +196,7 @@ type LN() =
             UnwrapResult sendMonoHopPayment2Res "SendMonoHopPayment failed"
 
             let channelInfoAfterPayment2 = clientWallet.ChannelStore.ChannelInfo channelId
-            match channelInfo.Status with
+            match channelInfoAfterPayment2.Status with
             | ChannelStatus.Active -> ()
             | status -> failwith (SPrintF1 "unexpected channel status. Expected Active, got %A" status)
 
@@ -203,6 +206,13 @@ type LN() =
 
     let ReceiveMonoHopPayments (serverWallet: ServerWalletInstance) channelId =
         async {
+            let channelInfoBeforeAnyPayment = serverWallet.ChannelStore.ChannelInfo channelId
+            match channelInfoBeforeAnyPayment.Status with
+            | ChannelStatus.Active -> ()
+            | status -> failwith (SPrintF1 "unexpected channel status. Expected Active, got %A" status)
+
+            let balanceBeforeAnyPayment = Money(channelInfoBeforeAnyPayment.Balance, MoneyUnit.BTC)
+
             let! receiveMonoHopPaymentRes =
                 Lightning.Network.ReceiveMonoHopPayment serverWallet.NodeServer channelId
             UnwrapResult receiveMonoHopPaymentRes "ReceiveMonoHopPayment failed"
@@ -212,7 +222,7 @@ type LN() =
             | ChannelStatus.Active -> ()
             | status -> failwith (SPrintF1 "unexpected channel status. Expected Active, got %A" status)
 
-            if Money(channelInfoAfterPayment1.Balance, MoneyUnit.BTC) <> walletToWalletTestPayment1Amount then
+            if Money(channelInfoAfterPayment1.Balance, MoneyUnit.BTC) <> balanceBeforeAnyPayment + walletToWalletTestPayment1Amount then
                 failwith "incorrect balance after receiving payment 1"
 
             let! receiveMonoHopPaymentRes =
@@ -224,7 +234,7 @@ type LN() =
             | ChannelStatus.Active -> ()
             | status -> failwith (SPrintF1 "unexpected channel status. Expected Active, got %A" status)
 
-            if Money(channelInfoAfterPayment2.Balance, MoneyUnit.BTC) <> walletToWalletTestPayment1Amount + walletToWalletTestPayment2Amount then
+            if Money(channelInfoAfterPayment2.Balance, MoneyUnit.BTC) <> balanceBeforeAnyPayment + walletToWalletTestPayment1Amount + walletToWalletTestPayment2Amount then
                 failwith "incorrect balance after receiving payment 2"
         }
 
@@ -1325,6 +1335,19 @@ type LN() =
             Lightning.Network.MaybeUpdateFee (Node.Client clientWallet.NodeClient) channelId
         UnwrapResult updateFeeRes "MaybeUpdateFee failed"
 
+        let channelInfoAfterUpdateMessageFee = clientWallet.ChannelStore.ChannelInfo channelId
+        let currentBalance = Money(channelInfoAfterUpdateMessageFee.Balance, MoneyUnit.BTC)
+        try
+            do! SendMonoHopPayments clientWallet channelId currentBalance
+        with
+        | ex ->
+            Assert.Inconclusive (
+                sprintf
+                    "Sending of monohop payments failed after UpdateFee message handling: %s"
+                    (ex.ToString())
+            )
+            failwith "unreachable"
+
         do! ClientCloseChannel clientWallet bitcoind channelId
 
         TearDown clientWallet lnd electrumServer bitcoind
@@ -1362,6 +1385,17 @@ type LN() =
         let! acceptUpdateFeeRes =
             Lightning.Network.AcceptUpdateFee serverWallet.NodeServer channelId
         UnwrapResult acceptUpdateFeeRes "AcceptUpdateFee failed"
+
+        try
+            do! ReceiveMonoHopPayments serverWallet channelId
+        with
+        | ex ->
+            Assert.Inconclusive (
+                sprintf
+                    "Receiving of monohop payments failed after UpdateFee message handling: %s"
+                    (ex.ToString())
+            )
+            failwith "unreachable"
 
         let! closeChannelRes = Lightning.Network.AcceptCloseChannel serverWallet.NodeServer channelId
         match closeChannelRes with
