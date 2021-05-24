@@ -745,7 +745,7 @@ type Node =
                 return Ok <| recoveryTransaction.ToHex ()
         }
 
-    member internal self.MaybeUpdateFee (channelId: ChannelIdentifier): Async<Result<unit, IErrorMsg>> = async {
+    member self.MaybeUpdateFee (channelId: ChannelIdentifier): Async<Result<unit, IErrorMsg>> = async {
         let serializedChannel = self.ChannelStore.LoadChannel channelId
         if not <| serializedChannel.IsFunder then
             return Ok ()
