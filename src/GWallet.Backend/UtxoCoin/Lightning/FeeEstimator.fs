@@ -16,14 +16,24 @@ type internal FeeEstimator =
             let avg = sum / decimal feesFromDifferentServers.Length
             avg
         let estimateFeeJob = ElectrumClient.EstimateFee Account.CONFIRMATION_BLOCK_TARGET
-        let! btcPerKB = Server.Query currency (QuerySettings.FeeEstimation averageFee) estimateFeeJob None
-        let satPerKB = (Money (btcPerKB, MoneyUnit.BTC)).ToUnit MoneyUnit.Satoshi
-        // 4 weight units per byte. See segwit specs.
-        let kwPerKB = 4m
-        let satPerKw = satPerKB / kwPerKB
-        let feeRatePerKw = FeeRatePerKw (uint32 satPerKw)
-        return { FeeRatePerKw = feeRatePerKw }
+        let! btcPerKB =
+            Server.Query currency (QuerySettings.FeeEstimation averageFee) estimateFeeJob None
+        return {
+            FeeRatePerKw = FeeEstimator.FeeRateFromDecimal btcPerKB
+        }
     }
+
+    // 4 weight units per byte. See segwit specs.
+    static member KwPerKB: decimal = 4m
+
+    static member FeeRateFromDecimal(btcPerKB: decimal): FeeRatePerKw =
+        let satPerKB = (Money (btcPerKB, MoneyUnit.BTC)).ToUnit MoneyUnit.Satoshi
+        let satPerKw = satPerKB / FeeEstimator.KwPerKB
+        FeeRatePerKw (uint32 satPerKw)
+
+    static member FeeRateToDecimal(satPerKw: FeeRatePerKw): decimal =
+        let satPerKB = (decimal satPerKw.Value) * FeeEstimator.KwPerKB
+        (Money (satPerKB, MoneyUnit.Satoshi)).ToUnit MoneyUnit.BTC
 
     static member EstimateCpfpFee
         (transactionBuilder: TransactionBuilder)

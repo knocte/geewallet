@@ -745,77 +745,38 @@ type Node =
                 return Ok <| recoveryTransaction.ToHex ()
         }
 
-    member self.MaybeUpdateFee (channelId: ChannelIdentifier): Async<Result<unit, IErrorMsg>> = async {
-        let serializedChannel = self.ChannelStore.LoadChannel channelId
-        if not <| serializedChannel.IsFunder then
-            return Ok ()
-        else
-            let commitments =
-                UnwrapOption
-                    serializedChannel.ChanState.Commitments
-                    "A channel can only end up in the wallet if it has commitments."
-            let agreedUponFeeRate =
-                let getFeeRateFromMsg (msg: IUpdateMsg): Option<FeeRatePerKw> =
-                    match msg with
-                    | :? UpdateFeeMsg as updateFeeMsg ->
-                        Some updateFeeMsg.FeeRatePerKw
-                    | _ -> None
-                let feeRateOpt =
-                    commitments.LocalChanges.Proposed
-                    |> List.rev
-                    |> List.tryPick getFeeRateFromMsg
-                match feeRateOpt with
-                | Some feeRate -> feeRate
-                | None ->
-                    let feeRateOpt =
-                        commitments.LocalChanges.Signed
-                        |> List.rev
-                        |> List.tryPick getFeeRateFromMsg
-                    match feeRateOpt with
-                    | Some feeRate -> feeRate
-                    | None ->
-                        commitments.LocalCommit.Spec.FeeRatePerKw
-            let! actualFeeRate = async {
-                let currency = self.Account.Currency
-                let! feeEstimator = FeeEstimator.Create currency
-                return
-                    (feeEstimator :> IFeeEstimator).GetEstSatPer1000Weight
-                        ConfirmationTarget.Normal
-            }
-            let mismatchRatio = agreedUponFeeRate.MismatchRatio actualFeeRate
-            let maxFeeRateMismatchRatio =
-                MonoHopUnidirectionalChannel.DefaultMaxFeeRateMismatchRatio
-            if mismatchRatio <= maxFeeRateMismatchRatio then
+    member self.UpdateFee (channelId: ChannelIdentifier)
+                          (feeRate: decimal)
+                              : Async<Result<unit, IErrorMsg>> = async {
+        let feeRatePerKw = FeeEstimator.FeeRateFromDecimal feeRate
+        let nodeMasterPrivKey =
+            match self with
+            | Client nodeClient -> nodeClient.NodeMasterPrivKey
+            | Server nodeServer -> nodeServer.NodeMasterPrivKey
+        let! activeChannelRes =
+            ActiveChannel.ConnectReestablish
+                self.ChannelStore
+                nodeMasterPrivKey
+                channelId
+        match activeChannelRes with
+        | Error reconnectActiveChannelError ->
+            if reconnectActiveChannelError.PossibleBug then
+                let msg =
+                    SPrintF2
+                        "error connecting to peer to update fee %s: %s"
+                        (channelId.ToString())
+                        (reconnectActiveChannelError :> IErrorMsg).Message
+                Infrastructure.ReportWarningMessage msg
+                |> ignore<bool>
+            return Error (NodeUpdateFeeError.Reconnect reconnectActiveChannelError :> IErrorMsg)
+        | Ok activeChannel ->
+            let! activeChannelAfterUpdateFeeRes = activeChannel.UpdateFee feeRatePerKw
+            match activeChannelAfterUpdateFeeRes with
+            | Error updateFeeError ->
+                return Error (NodeUpdateFeeError.UpdateFee updateFeeError :> IErrorMsg)
+            | Ok activeChannelAfterUpdateFee ->
+                (activeChannelAfterUpdateFee :> IDisposable).Dispose()
                 return Ok ()
-            else
-                let nodeMasterPrivKey =
-                    match self with
-                    | Client nodeClient -> nodeClient.NodeMasterPrivKey
-                    | Server nodeServer -> nodeServer.NodeMasterPrivKey
-                let! activeChannelRes =
-                    ActiveChannel.ConnectReestablish
-                        self.ChannelStore
-                        nodeMasterPrivKey
-                        channelId
-                match activeChannelRes with
-                | Error reconnectActiveChannelError ->
-                    if reconnectActiveChannelError.PossibleBug then
-                        let msg =
-                            SPrintF2
-                                "error connecting to peer to update fee %s: %s"
-                                (channelId.ToString())
-                                (reconnectActiveChannelError :> IErrorMsg).Message
-                        Infrastructure.ReportWarningMessage msg
-                        |> ignore<bool>
-                    return Error (NodeUpdateFeeError.Reconnect reconnectActiveChannelError :> IErrorMsg)
-                | Ok activeChannel ->
-                    let! activeChannelAfterUpdateFeeRes = activeChannel.UpdateFee actualFeeRate
-                    match activeChannelAfterUpdateFeeRes with
-                    | Error updateFeeError ->
-                        return Error (NodeUpdateFeeError.UpdateFee updateFeeError :> IErrorMsg)
-                    | Ok activeChannelAfterUpdateFee ->
-                        (activeChannelAfterUpdateFee :> IDisposable).Dispose()
-                        return Ok ()
     }
 
     member self.CheckForChannelFraudAndSendRevocationTx (channelId: ChannelIdentifier): Async<Option<string>> =

@@ -3,7 +3,10 @@
 open System
 open System.IO
 
+open DotNetLightning.Chain
 open DotNetLightning.Channel
+open DotNetLightning.Serialization.Msgs
+open DotNetLightning.Utils
 open NBitcoin
 
 open GWallet.Backend
@@ -259,6 +262,52 @@ type ChannelStore(account: NormalUtxoAccount) =
                         Some reportedHeight
                 return Some (closingTxIdString, closingTxHeightOpt)
         }
+
+    member self.FeeUpdateRequired (channelId: ChannelIdentifier): Async<Option<decimal>> = async {
+        let serializedChannel = self.LoadChannel channelId
+        if not <| serializedChannel.IsFunder then
+            return None
+        else
+            let commitments =
+                UnwrapOption
+                    serializedChannel.ChanState.Commitments
+                    "A channel can only end up in the wallet if it has commitments."
+            let agreedUponFeeRate =
+                let getFeeRateFromMsg (msg: IUpdateMsg): Option<FeeRatePerKw> =
+                    match msg with
+                    | :? UpdateFeeMsg as updateFeeMsg ->
+                        Some updateFeeMsg.FeeRatePerKw
+                    | _ -> None
+                let feeRateOpt =
+                    commitments.LocalChanges.Proposed
+                    |> List.rev
+                    |> List.tryPick getFeeRateFromMsg
+                match feeRateOpt with
+                | Some feeRate -> feeRate
+                | None ->
+                    let feeRateOpt =
+                        commitments.LocalChanges.Signed
+                        |> List.rev
+                        |> List.tryPick getFeeRateFromMsg
+                    match feeRateOpt with
+                    | Some feeRate -> feeRate
+                    | None ->
+                        commitments.LocalCommit.Spec.FeeRatePerKw
+            let! actualFeeRate = async {
+                let currency = (self.Account :> IAccount).Currency
+                let! feeEstimator = FeeEstimator.Create currency
+                return
+                    (feeEstimator :> IFeeEstimator).GetEstSatPer1000Weight
+                        ConfirmationTarget.Normal
+            }
+            let mismatchRatio = agreedUponFeeRate.MismatchRatio actualFeeRate
+            let maxFeeRateMismatchRatio =
+                MonoHopUnidirectionalChannel.DefaultMaxFeeRateMismatchRatio
+            if mismatchRatio <= maxFeeRateMismatchRatio then
+                return None
+            else
+                return Some (FeeEstimator.FeeRateToDecimal actualFeeRate)
+    }
 
 module ChannelManager =
     // difference from fee estimation in UtxoCoinAccount.fs: this is for P2WSH
