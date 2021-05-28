@@ -295,8 +295,9 @@ type ClosedChannel()=
 
                                     let! _txid =
                                         let signedTx: string = finalizedTx.Value.ToHex()
+                                        let currency = (connectedChannel.Account :> IAccount).Currency
                                         Infrastructure.LogDebug(SPrintF1 "Broadcasting tx: %A" signedTx)
-                                        Account.BroadcastRawTransaction Currency.BTC signedTx
+                                        Account.BroadcastRawTransaction currency signedTx
 
                                     Infrastructure.LogDebug(SPrintF1 "Got tx: %A" _txid)
 
@@ -320,18 +321,20 @@ type ClosedChannel()=
             return result
         }
 
-    static member internal CheckClosingFinished(fundingTxId: TxId): Async<Result<bool, CloseChannelError>> =
+    static member internal CheckClosingFinished (fundingTxId: TxId)
+                                                (currency: Currency)
+                                                    : Async<Result<bool, CloseChannelError>> =
         async {
             let fundingTxIdHash = fundingTxId.Value.ToString()
 
             let! fundingVerboseTransaction =
-                Server.Query Settings.Currency
+                Server.Query currency
                              (QuerySettings.Default ServerSelectionMode.Fast)
                              (ElectrumClient.GetBlockchainTransactionVerbose fundingTxIdHash)
                              None
 
             let parsedTransaction =
-                NBitcoin.Transaction.Parse(fundingVerboseTransaction.Hex, Account.GetNetwork Settings.Currency)
+                NBitcoin.Transaction.Parse(fundingVerboseTransaction.Hex, Account.GetNetwork currency)
 
             let maybeOutput =
                 // TODO: find a better heuristic to check if this is the output we are looking for
@@ -351,7 +354,7 @@ type ClosedChannel()=
                     NBitcoin.DataEncoders.Encoders.Hex.EncodeData reversedSha
 
                 let! unspentOutputs =
-                    Server.Query Settings.Currency
+                    Server.Query currency
                                  (QuerySettings.Default ServerSelectionMode.Fast)
                                  (ElectrumClient.GetUnspentTransactionOutputs scripthash)
                                  None

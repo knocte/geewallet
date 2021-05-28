@@ -33,7 +33,7 @@ module public Network =
 
     let public CheckClosingFinished (channel: ChannelInfo): Async<bool> =
         async {
-            let! resCheck = ClosedChannel.CheckClosingFinished channel.FundingTxId.DnlTxId
+            let! resCheck = ClosedChannel.CheckClosingFinished channel.FundingTxId.DnlTxId channel.Currency
             match resCheck with
             | Ok res ->
                 return res

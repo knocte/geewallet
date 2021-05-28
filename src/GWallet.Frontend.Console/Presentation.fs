@@ -88,9 +88,10 @@ module Presentation =
         Console.WriteLine "Estimated spendable balance of the channel would be: "
         Console.Write(
             sprintf
-                " %s BTC "
+                " %s %s "
                 (estimatedSpendableBalance
                     |> Formatting.DecimalAmountRounding CurrencyType.Crypto)
+                (metadata.Currency.ToString())
         )
         match maybeUsdPrice with
         | Fresh usdPrice ->
@@ -110,5 +111,5 @@ module Presentation =
             )
         | NotFresh NotAvailable ->
             Console.WriteLine()
-        ShowFee maybeUsdPrice Currency.BTC metadata
+        ShowFee maybeUsdPrice metadata.Currency metadata
 

@@ -59,6 +59,12 @@ type Currency =
         else
             failwith <| SPrintF1 "Unable to determine decimal places for %A" self
 
+    member self.BlockTimeInMinutes(): uint32 =
+        match self with
+        | BTC -> 10u
+        | LTC -> 2u
+        | _ -> failwith "Not implemented"
+
     override self.ToString() =
 #if STRICTER_COMPILATION_BUT_WITH_REFLECTION_AT_RUNTIME
         SPrintF1 "%A" self

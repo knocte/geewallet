@@ -16,18 +16,17 @@ module LayerTwo =
 
     let rec AskLightningAccount(): UtxoCoin.NormalUtxoAccount =
         let account = UserInteraction.AskAccount()
-        let lightningCurrency = UtxoCoin.Lightning.Settings.Currency
-        if account.Currency <> lightningCurrency then
+        let lightningCurrencies = UtxoCoin.Lightning.Settings.Currencies
+        if not (lightningCurrencies.Contains account.Currency) then
             Console.WriteLine (
                 sprintf
-                    "The only currency supported for Lightning is %A, please select a %A account"
-                    lightningCurrency
-                    lightningCurrency
+                    "The only currencies supported for Lightning are %A, please select another account"
+                    (String.Join("&", lightningCurrencies))
             )
             AskLightningAccount ()
         else
             match account with
-            | :? UtxoCoin.NormalUtxoAccount as btcAccount -> btcAccount
+            | :? UtxoCoin.NormalUtxoAccount as utxoAccount -> utxoAccount
             | :? UtxoCoin.ReadOnlyUtxoAccount ->
                 Console.WriteLine "Read-only accounts cannot be used in lightning"
                 AskLightningAccount ()
@@ -195,7 +194,7 @@ module LayerTwo =
                                     sprintf
                                         "Opening a channel with this party will require %i confirmations (~%i minutes)"
                                         minimumDepth
-                                        (minimumDepth * 10u)
+                                        (minimumDepth * currency.BlockTimeInMinutes())
                                 )
                                 let acceptMinimumDepth = UserInteraction.AskYesNo "Do you accept?"
                                 if acceptMinimumDepth then
@@ -514,7 +513,7 @@ module LayerTwo =
             let normalUtxoAccounts = accounts.OfType<UtxoCoin.NormalUtxoAccount>()
             for account in normalUtxoAccounts do
                 let channelStore = ChannelStore account
-
+                let currency = (account:> IAccount).Currency
                 let channelIds =
                     channelStore.ListChannelIds()
 
@@ -530,7 +529,7 @@ module LayerTwo =
                 yield async {
                     return async {
                         return seq {
-                            yield sprintf "Lightning Status (%i active channels)" activeChannelCount
+                            yield sprintf "%A Lightning Status (%i active channels)" currency activeChannelCount
                         }
                     }
                 }
