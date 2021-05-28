@@ -53,6 +53,7 @@ type ChannelBreachData =
                                                      localChannelPrivKeys
                                                      network
                                                      account
+                                                     None
 
         let breachData : CommitmentBreachData =
             {

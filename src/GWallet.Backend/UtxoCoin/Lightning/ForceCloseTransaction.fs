@@ -16,6 +16,7 @@ module public ForceCloseTransaction =
                                     (localChannelPrivKeys: ChannelPrivKeys)
                                     (network: Network)
                                     (account: NormalUtxoAccount)
+                                    (rewardAddressOpt: Option<string>)
                                         : Async<Transaction> =
         async {
             let transactionBuilder =
@@ -31,8 +32,39 @@ module public ForceCloseTransaction =
                 let originAddress = (account :> IAccount).PublicAddress
                 BitcoinAddress.Create(originAddress, network)
 
-            transactionBuilder.SendAll targetAddress
-            |> ignore
+            let rewardAddressOpt =
+                match rewardAddressOpt with
+                | Some rewardAddress ->
+                    BitcoinAddress.Create(rewardAddress, network) |> Some
+                | None -> None
+
+            let reward =
+                let toLocal =
+                    (Commitments.RemoteCommitAmount
+                        commitments.RemoteParams
+                        commitments.LocalParams
+                        commitments.RemoteCommit)
+                            .ToLocal
+                            .ToDecimal(MoneyUnit.Satoshi)
+
+                let toRemote =
+                    (Commitments.RemoteCommitAmount
+                        commitments.RemoteParams
+                        commitments.LocalParams
+                        commitments.RemoteCommit)
+                            .ToRemote
+                            .ToDecimal(MoneyUnit.Satoshi)
+
+                (toLocal + toRemote) * Config.WATCH_TOWER_REWARD_PERCENTAGE / 100m
+                |> Money.Satoshis
+
+
+            match rewardAddressOpt with
+            | Some rewardAddress ->
+                transactionBuilder.Send (rewardAddress, reward) |> ignore
+                transactionBuilder.SendAllRemaining targetAddress |> ignore
+            | None ->
+                transactionBuilder.SendAll targetAddress |> ignore
 
             let! btcPerKiloByteForFastTrans =
                 let averageFee (feesFromDifferentServers: List<decimal>): decimal =
