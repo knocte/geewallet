@@ -480,11 +480,23 @@ module LayerTwo =
             let normalUtxoAccounts = accounts.OfType<UtxoCoin.NormalUtxoAccount>()
             for account in normalUtxoAccounts do
                 let channelStore = ChannelStore account
-                let channelIds = channelStore.ListChannelIds()
+
+                let channelIds =
+                    channelStore.ListChannelIds()
+
+                let isActive = 
+                    fun (channelId: ChannelIdentifier) ->
+                        let channelInfo = channelStore.ChannelInfo channelId
+                        channelInfo.Status = ChannelStatus.Active
+                let activeChannelCount = 
+                    channelIds 
+                    |> Seq.where isActive
+                    |> Seq.length
+
                 yield async {
                     return async {
                         return seq {
-                            yield sprintf "Lightning Status (%i channels)" (Seq.length channelIds)
+                            yield sprintf "Lightning Status (%i active channels)" activeChannelCount
                         }
                     }
                 }
