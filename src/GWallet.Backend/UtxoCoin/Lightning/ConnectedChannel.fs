@@ -87,14 +87,11 @@ type internal ConnectedChannel =
         let serializedChannel = channelStore.LoadChannel channelId
         Infrastructure.LogDebug <| SPrintF1 "loading channel for %s" (channelId.ToString())
         let! channel =
-            let fundingTxProvider (_ : IDestination * Money * FeeRatePerKw) =
-                Result.Error "funding tx not needed cause channel already created"
             MonoHopUnidirectionalChannel.Create
                 serializedChannel.RemoteNodeId
                 channelStore.Account
                 nodeMasterPrivKey
                 serializedChannel.ChannelIndex
-                fundingTxProvider
                 serializedChannel.ChanState
         return serializedChannel, channel
     }

@@ -172,13 +172,10 @@ type ClientWalletInstance private (wallet: WalletInstance, nodeClient: NodeClien
                 self.NodeClient
                 nodeEndPoint
                 transferAmount
-                metadata
-                self.Password
         let pendingChannel = UnwrapResult pendingChannelRes "OpenChannel failed"
         let minimumDepth = (pendingChannel :> IChannelToBeOpened).ConfirmationsRequired
-        let channelId = (pendingChannel :> IChannelToBeOpened).ChannelId
-        let! fundingTxIdRes = pendingChannel.Accept()
-        let _fundingTxId = UnwrapResult fundingTxIdRes "pendingChannel.Accept failed"
+        let! acceptRes = pendingChannel.Accept metadata self.Password
+        let (channelId, _fundingTxId) = UnwrapResult acceptRes "pendingChannel.Accept failed"
         bitcoind.GenerateBlocks (BlockHeightOffset32 minimumDepth) self.Address
 
         do! self.WaitForFundingConfirmed channelId

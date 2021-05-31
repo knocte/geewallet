@@ -183,8 +183,6 @@ module LayerTwo =
                                     nodeClient
                                     nodeEndPoint
                                     channelCapacity
-                                    metadata
-                                    password
                             match pendingChannelRes with
                             | Error nodeOpenChannelError ->
                                 Console.WriteLine (sprintf "Error opening channel: %s" nodeOpenChannelError.Message)
@@ -198,11 +196,11 @@ module LayerTwo =
                                 )
                                 let acceptMinimumDepth = UserInteraction.AskYesNo "Do you accept?"
                                 if acceptMinimumDepth then
-                                    let! txIdRes = pendingChannel.Accept()
-                                    match txIdRes with
+                                    let! acceptRes = pendingChannel.Accept metadata password
+                                    match acceptRes with
                                     | Error fundChannelError ->
                                         Console.WriteLine(sprintf "Error funding channel: %s" fundChannelError.Message)
-                                    | Ok txId ->
+                                    | Ok (_channelId, txId) ->
                                         let uri = BlockExplorer.GetTransaction currency (TxId.ToString txId)
                                         Console.WriteLine(sprintf "A funding transaction was broadcast: %A" uri)
                     UserInteraction.PressAnyKeyToContinue()

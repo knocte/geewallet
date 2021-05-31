@@ -159,7 +159,6 @@ type internal NodeAcceptUpdateFeeError =
 
 type IChannelToBeOpened =
     abstract member ConfirmationsRequired: uint32 with get
-    abstract member ChannelId: ChannelIdentifier with get
 
 type IncomingChannelEvent =
     | MonoHopUnidirectionalPayment
@@ -167,9 +166,12 @@ type IncomingChannelEvent =
 
 type PendingChannel internal (outgoingUnfundedChannel: OutgoingUnfundedChannel) =
     member internal self.OutgoingUnfundedChannel = outgoingUnfundedChannel
-    member public self.Accept (): Async<Result<TransactionIdentifier, IErrorMsg>> = async {
+
+    member public self.Accept (metadata: TransactionMetadata)
+                              (password: string)
+                                  : Async<Result<ChannelIdentifier * TransactionIdentifier, IErrorMsg>> = async {
         let! fundedChannelRes =
-            FundedChannel.FundChannel self.OutgoingUnfundedChannel
+            FundedChannel.FundChannel self.OutgoingUnfundedChannel metadata password
         match fundedChannelRes with
         | Error fundChannelError ->
             if fundChannelError.PossibleBug then
@@ -179,16 +181,14 @@ type PendingChannel internal (outgoingUnfundedChannel: OutgoingUnfundedChannel) 
             return Error (fundChannelError :> IErrorMsg)
         | Ok fundedChannel ->
             let txId = fundedChannel.FundingTxId
+            let channelId = fundedChannel.ChannelId
             (fundedChannel :> IDisposable).Dispose()
-            return Ok txId
+            return Ok (channelId, txId)
     }
     interface IChannelToBeOpened with
         member self.ConfirmationsRequired
             with get(): uint32 =
                 self.OutgoingUnfundedChannel.MinimumDepth.Value
-        member self.ChannelId
-            with get(): ChannelIdentifier =
-                self.OutgoingUnfundedChannel.ChannelId
 
 type ClosingBalanceBelowDustLimitError =
     | ClosingBalanceBelowDustLimit
@@ -204,8 +204,6 @@ type NodeClient internal (channelStore: ChannelStore, nodeMasterPrivKey: NodeMas
 
     member internal self.OpenChannel (nodeEndPoint: NodeEndPoint)
                                      (channelCapacity: TransferAmount)
-                                     (metadata: TransactionMetadata)
-                                     (password: string)
                                          : Async<Result<PendingChannel, IErrorMsg>> = async {
         let peerId = PeerId (nodeEndPoint.IPEndPoint :> EndPoint)
         let nodeId = nodeEndPoint.NodeId.ToString() |> NBitcoin.PubKey |> NodeId
@@ -229,8 +227,6 @@ type NodeClient internal (channelStore: ChannelStore, nodeMasterPrivKey: NodeMas
                     peerNode
                     self.Account
                     channelCapacity
-                    metadata
-                    password
             match outgoingUnfundedChannelRes with
             | Error openChannelError ->
                 if openChannelError.PossibleBug then
