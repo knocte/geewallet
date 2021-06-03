@@ -27,6 +27,7 @@ IF EXIST %ENTERPRISE% (
                     ) ELSE (
                         ECHO fsi.exe not found, is F# installed?
                         CD %ProgramFiles(x86)%
+                        C:
                         DIR /S fsi.exe
                         ECHO Or maybe it changed location, see above if you find it.
                         EXIT /b 1
