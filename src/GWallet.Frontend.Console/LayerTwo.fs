@@ -14,28 +14,50 @@ open GWallet.Backend.FSharpUtil.UwpHacks
 
 module LayerTwo =
 
-    let rec AskLightningAccount(): UtxoCoin.NormalUtxoAccount =
+    let rec AskUtxoAccount (currency: Option<Currency>): IAccount =
         let account = UserInteraction.AskAccount()
-        let lightningCurrencies = UtxoCoin.Lightning.Settings.Currencies
-        if not (lightningCurrencies.Contains account.Currency) then
-            Console.WriteLine (
-                sprintf
-                    "The only currencies supported for Lightning are %A, please select another account"
-                    (String.Join("&", lightningCurrencies))
-            )
-            AskLightningAccount ()
-        else
+        let validCurrencyRes =
+            match currency with
+            | None ->
+                let lightningCurrencies = UtxoCoin.Lightning.Settings.Currencies
+                if lightningCurrencies.Contains account.Currency then
+                    Ok ()
+                else
+                    Error (
+                        sprintf
+                            "The only currencies supported for Lightning are %A, please select another account"
+                            (String.Join("&", lightningCurrencies))
+                    )
+            | Some currency ->
+                if currency = account.Currency then
+                    Ok ()
+                else 
+                    Error "Currencies do not match"
+        match validCurrencyRes with
+        | Error msg ->
+            Console.WriteLine msg
+            AskUtxoAccount currency
+        | Ok () ->
             match account with
-            | :? UtxoCoin.NormalUtxoAccount as utxoAccount -> utxoAccount
-            | :? UtxoCoin.ReadOnlyUtxoAccount ->
-                Console.WriteLine "Read-only accounts cannot be used in lightning"
-                AskLightningAccount ()
+            | :? UtxoCoin.NormalUtxoAccount as account -> account :> IAccount
+            | :? UtxoCoin.ReadOnlyUtxoAccount as account -> account :> IAccount
             | :? UtxoCoin.ArchivedUtxoAccount ->
                 Console.WriteLine "This account has been archived. You must select an active account"
-                AskLightningAccount ()
+                AskUtxoAccount currency
             | _ ->
                 Console.WriteLine "Invalid account for use with Lightning"
-                AskLightningAccount ()
+                AskUtxoAccount currency
+
+
+    let rec AskLightningAccount (currency: Option<Currency>): UtxoCoin.NormalUtxoAccount =
+        match AskUtxoAccount currency with
+        | :? UtxoCoin.NormalUtxoAccount as utxoAccount -> utxoAccount
+        | :? UtxoCoin.ReadOnlyUtxoAccount ->
+            Console.WriteLine "Read-only accounts cannot be used in lightning"
+            AskLightningAccount currency
+        | _ ->
+            Console.WriteLine "Invalid account for use with Lightning"
+            AskLightningAccount currency
 
     let AskChannelCounterpartyConnectionDetails currency: Option<Lightning.NodeEndPoint> =
         let useQRString =
@@ -145,22 +167,25 @@ module LayerTwo =
                     return! ForceCloseChannel node currency channelId
             }
 
-    let OpenChannel(): Async<unit> =
+    let OpenChannelFromReadOnlyAccount (fundingAccount: ReadOnlyUtxoAccount)
+                                       (owningAccount: NormalUtxoAccount)
+                                           : Async<unit> =
         async {
-            let account = AskLightningAccount ()
-            let currency = (account :> IAccount).Currency
-            let channelStore = ChannelStore account
+            let currency = (owningAccount :> IAccount).Currency
+            let channelStore = ChannelStore owningAccount
 
-            match UserInteraction.AskAmount account with
+            match UserInteraction.AskAmount fundingAccount with
             | None -> return ()
             | Some channelCapacity ->
                 match AskChannelCounterpartyConnectionDetails currency with
                 | None -> return ()
                 | Some nodeEndPoint ->
-                    Infrastructure.LogDebug "Calling EstimateFee..."
                     let! metadataOpt = async {
                         try
-                            let! metadata = UtxoCoin.Lightning.ChannelManager.EstimateChannelOpeningFee account channelCapacity
+                            let! metadata =
+                                UtxoCoin.Lightning.ChannelManager.EstimateChannelOpeningFee
+                                    (fundingAccount :> IAccount)
+                                    channelCapacity
                             return Some metadata
                         with
                         | InsufficientBalanceForFee _ ->
@@ -176,6 +201,8 @@ module LayerTwo =
 
                         let acceptFeeRate = UserInteraction.AskYesNo "Do you accept?"
                         if acceptFeeRate then
+                            Console.WriteLine
+                                "To proceed, you must enter the password for your online account"
                             let password = UserInteraction.AskPassword false
                             let nodeClient = Lightning.Connection.StartClient channelStore password
                             let! pendingChannelRes =
@@ -196,19 +223,115 @@ module LayerTwo =
                                 )
                                 let acceptMinimumDepth = UserInteraction.AskYesNo "Do you accept?"
                                 if acceptMinimumDepth then
-                                    let! acceptRes = pendingChannel.Accept metadata password
-                                    match acceptRes with
-                                    | Error fundChannelError ->
-                                        Console.WriteLine(sprintf "Error funding channel: %s" fundChannelError.Message)
-                                    | Ok (_channelId, txId) ->
-                                        let uri = BlockExplorer.GetTransaction currency (TxId.ToString txId)
-                                        Console.WriteLine(sprintf "A funding transaction was broadcast: %A" uri)
+                                    Console.WriteLine
+                                        "This channel is being funded by an offline wallet."
+                                    Console.WriteLine
+                                        "Introduce a file name to save the unsigned funding transaction: "
+                                    let filePath = Console.ReadLine()
+                                    let proposal = {
+                                        OriginAddress = (fundingAccount :> IAccount).PublicAddress
+                                        Amount = pendingChannel.TransferAmount
+                                        DestinationAddress = pendingChannel.FundingDestinationString()
+                                    }
+                                    Account.SaveUnsignedTransaction proposal metadata filePath
+                                    Console.WriteLine "Transaction saved. Now copy it to the device with the private key for signing."
+                                    let fileToReadFrom =
+                                        UserInteraction.AskFileNameToLoad
+                                            "Introduce a file name to load the signed funding transaction: "
+                                    let signedTransaction =
+                                        Account.LoadSignedTransactionFromFile fileToReadFrom.FullName
+                                    let transactionDetails = GWallet.Backend.Account.GetSignedTransactionDetails signedTransaction
+                                    Presentation.ShowTransactionData
+                                        transactionDetails
+                                        signedTransaction.TransactionInfo.Metadata
+                                    if UserInteraction.AskYesNo "Do you accept?" then
+                                        let! acceptRes =
+                                            pendingChannel.AcceptWithFundingTx
+                                                signedTransaction.RawTransaction
+                                        match acceptRes with
+                                        | Error fundChannelError ->
+                                            Console.WriteLine(sprintf "Error funding channel: %s" fundChannelError.Message)
+                                        | Ok (_channelId, txId) ->
+                                            let uri = BlockExplorer.GetTransaction currency (TxId.ToString txId)
+                                            Console.WriteLine(sprintf "A funding transaction was broadcast: %A" uri)
+
                     UserInteraction.PressAnyKeyToContinue()
         }
 
+    let OpenChannelFromNormalAccount (account: NormalUtxoAccount): Async<unit> = async {
+        let currency = (account :> IAccount).Currency
+        let channelStore = ChannelStore account
+
+        match UserInteraction.AskAmount account with
+        | None -> return ()
+        | Some channelCapacity ->
+            match AskChannelCounterpartyConnectionDetails currency with
+            | None -> return ()
+            | Some nodeEndPoint ->
+                Infrastructure.LogDebug "Calling EstimateFee..."
+                let! metadataOpt = async {
+                    try
+                        let! metadata = UtxoCoin.Lightning.ChannelManager.EstimateChannelOpeningFee (account :> IAccount) channelCapacity
+                        return Some metadata
+                    with
+                    | InsufficientBalanceForFee _ ->
+                        Console.WriteLine
+                            "Estimated fee is too high for the remaining balance, \
+                            use a different account or a different amount."
+                        return None
+                }
+                match metadataOpt with
+                | None -> return ()
+                | Some metadata ->
+                    Presentation.ShowFeeAndSpendableBalance metadata channelCapacity
+
+                    let acceptFeeRate = UserInteraction.AskYesNo "Do you accept?"
+                    if acceptFeeRate then
+                        let password = UserInteraction.AskPassword false
+                        let nodeClient = Lightning.Connection.StartClient channelStore password
+                        let! pendingChannelRes =
+                            Lightning.Network.OpenChannel
+                                nodeClient
+                                nodeEndPoint
+                                channelCapacity
+                        match pendingChannelRes with
+                        | Error nodeOpenChannelError ->
+                            Console.WriteLine (sprintf "Error opening channel: %s" nodeOpenChannelError.Message)
+                        | Ok pendingChannel ->
+                            let minimumDepth = (pendingChannel :> IChannelToBeOpened).ConfirmationsRequired
+                            Console.WriteLine(
+                                sprintf
+                                    "Opening a channel with this party will require %i confirmations (~%i minutes)"
+                                    minimumDepth
+                                    (minimumDepth * currency.BlockTimeInMinutes())
+                            )
+                            let acceptMinimumDepth = UserInteraction.AskYesNo "Do you accept?"
+                            if acceptMinimumDepth then
+                                let! acceptRes = pendingChannel.Accept metadata password
+                                match acceptRes with
+                                | Error fundChannelError ->
+                                    Console.WriteLine(sprintf "Error funding channel: %s" fundChannelError.Message)
+                                | Ok (_channelId, txId) ->
+                                    let uri = BlockExplorer.GetTransaction currency (TxId.ToString txId)
+                                    Console.WriteLine(sprintf "A funding transaction was broadcast: %A" uri)
+                UserInteraction.PressAnyKeyToContinue()
+    }
+
+    let OpenChannel(): Async<unit> =
+        match AskUtxoAccount None with
+        | :? UtxoCoin.NormalUtxoAccount as account ->
+             OpenChannelFromNormalAccount account
+        | :? UtxoCoin.ReadOnlyUtxoAccount as fundingAccount ->
+            Console.WriteLine "You've selected a read-only account to open a channel from"
+            Console.WriteLine "Select the normal account which take control of the channel funds"
+            let owningAccount =
+                AskLightningAccount (Some (fundingAccount :> IAccount).Currency)
+            OpenChannelFromReadOnlyAccount fundingAccount owningAccount
+        | _ -> failwith "unreachable"
+
     let CloseChannel(): Async<unit> =
         async {
-            let account = AskLightningAccount()
+            let account = AskLightningAccount None
             let channelStore = ChannelStore account
             let channelIdOpt = AskChannelId channelStore None
             match channelIdOpt with
@@ -256,7 +379,7 @@ module LayerTwo =
 
     let AcceptChannel(): Async<unit> =
         async {
-            let account = AskLightningAccount ()
+            let account = AskLightningAccount None
             let channelStore = ChannelStore account
             let bindAddress = AskBindAddress()
             let password = UserInteraction.AskPassword false
@@ -276,7 +399,7 @@ module LayerTwo =
 
     let SendPayment(): Async<unit> =
         async {
-            let account = AskLightningAccount ()
+            let account = AskLightningAccount None
             let channelStore = ChannelStore account
             let channelIdOpt = AskChannelId channelStore (Some true)
             match channelIdOpt with
@@ -302,7 +425,7 @@ module LayerTwo =
 
     let ReceiveLightningEvent(): Async<unit> =
         async {
-            let account = AskLightningAccount ()
+            let account = AskLightningAccount None
             let channelStore = ChannelStore account
             let channelIdOpt = AskChannelId channelStore (Some false)
             match channelIdOpt with

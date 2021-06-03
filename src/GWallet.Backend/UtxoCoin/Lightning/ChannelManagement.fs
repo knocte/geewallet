@@ -311,11 +311,11 @@ type ChannelStore(account: NormalUtxoAccount) =
 
 module ChannelManager =
     // difference from fee estimation in UtxoCoinAccount.fs: this is for P2WSH
-    let EstimateChannelOpeningFee (account: UtxoCoin.NormalUtxoAccount) (amount: TransferAmount) =
+    let EstimateChannelOpeningFee (account: IAccount) (amount: TransferAmount) =
         let witScriptIdLength = 32
         // this dummy address is only used for fee estimation
         let nullScriptId = NBitcoin.WitScriptId (Array.zeroCreate witScriptIdLength)
-        let network = UtxoCoin.Account.GetNetwork (account :> IAccount).Currency
+        let network = UtxoCoin.Account.GetNetwork account.Currency
         let dummyAddr = NBitcoin.BitcoinWitScriptAddress (nullScriptId, network)
-        UtxoCoin.Account.EstimateFeeForDestination account amount dummyAddr
+        UtxoCoin.Account.EstimateFeeForDestination (account :?> IUtxoAccount) amount dummyAddr
 

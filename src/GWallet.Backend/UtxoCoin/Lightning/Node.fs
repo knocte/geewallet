@@ -165,13 +165,28 @@ type IncomingChannelEvent =
     | Shutdown
 
 type PendingChannel internal (outgoingUnfundedChannel: OutgoingUnfundedChannel) =
+
     member internal self.OutgoingUnfundedChannel = outgoingUnfundedChannel
 
-    member public self.Accept (metadata: TransactionMetadata)
-                              (password: string)
-                                  : Async<Result<ChannelIdentifier * TransactionIdentifier, IErrorMsg>> = async {
+    member __.Currency: Currency =
+        (outgoingUnfundedChannel.ConnectedChannel.Account :> IAccount).Currency
+
+    member self.FundingDestinationString(): string =
+        let network = UtxoCoin.Account.GetNetwork self.Currency
+        (outgoingUnfundedChannel.FundingDestination.ScriptPubKey.GetDestinationAddress network).ToString()
+
+    member __.TransferAmount: TransferAmount = outgoingUnfundedChannel.TransferAmount
+
+    member public self.AcceptWithFundingTx (fundingTransactionHex: string)
+                                               : Async<Result<ChannelIdentifier * TransactionIdentifier, IErrorMsg>> = async {
         let! fundedChannelRes =
-            FundedChannel.FundChannel self.OutgoingUnfundedChannel metadata password
+            let connectedChannel = self.OutgoingUnfundedChannel.ConnectedChannel
+            let account = connectedChannel.Account
+            let network = Account.GetNetwork (account :> IAccount).Currency
+            let hex = DataEncoders.HexEncoder()
+            let fundingTransaction =
+                Transaction.Load (hex.DecodeData fundingTransactionHex, network)
+            FundedChannel.FundChannel self.OutgoingUnfundedChannel fundingTransaction
         match fundedChannelRes with
         | Error fundChannelError ->
             if fundChannelError.PossibleBug then
@@ -185,6 +200,20 @@ type PendingChannel internal (outgoingUnfundedChannel: OutgoingUnfundedChannel) 
             (fundedChannel :> IDisposable).Dispose()
             return Ok (channelId, txId)
     }
+
+    member public self.Accept (metadata: TransactionMetadata)
+                              (password: string)
+                                  : Async<Result<ChannelIdentifier * TransactionIdentifier, IErrorMsg>> =
+        let account = self.OutgoingUnfundedChannel.ConnectedChannel.Account
+        let transaction =
+            Account.SignTransactionForDestination
+                account
+                metadata
+                self.OutgoingUnfundedChannel.FundingDestination
+                self.TransferAmount
+                password
+        self.AcceptWithFundingTx transaction
+
     interface IChannelToBeOpened with
         member self.ConfirmationsRequired
             with get(): uint32 =
