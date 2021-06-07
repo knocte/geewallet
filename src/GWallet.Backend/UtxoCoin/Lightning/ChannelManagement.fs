@@ -220,7 +220,7 @@ type ChannelStore(account: NormalUtxoAccount) =
                 "A channel can only end up in the wallet if it has commitments."
         commitments.LocalParams.ToSelfDelay.Value
 
-    member self.CheckForClosingTx (channelId: ChannelIdentifier): Async<Option<string * Option<uint32>>> =
+    member self.CheckForClosingTx (channelId: ChannelIdentifier): Async<Option<TransactionIdentifier * Option<uint32>>> =
         async {
             let serializedChannel = self.LoadChannel channelId
             let commitments = serializedChannel.Commitments
@@ -253,14 +253,14 @@ type ChannelStore(account: NormalUtxoAccount) =
             match closingTxItemOpt with
             | None -> return None
             | Some closingTxItem ->
-                let closingTxIdString = closingTxItem.TxHash
+                let closingTxId = TransactionIdentifier.FromHash <| uint256 closingTxItem.TxHash
                 let closingTxHeightOpt =
                     let reportedHeight = closingTxItem.Height
                     if reportedHeight = 0u then
                         None
                     else
                         Some reportedHeight
-                return Some (closingTxIdString, closingTxHeightOpt)
+                return Some (closingTxId, closingTxHeightOpt)
         }
 
     member self.FeeUpdateRequired (channelId: ChannelIdentifier): Async<Option<decimal>> = async {

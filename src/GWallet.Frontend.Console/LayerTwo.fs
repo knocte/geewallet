@@ -583,13 +583,13 @@ module LayerTwo =
     let FindRemoteForceClose
         (channelStore: ChannelStore)
         (channelInfo: ChannelInfo)
-        : Async<Option<string * Option<uint32>>> =
+        : Async<Option<TransactionIdentifier * Option<uint32>>> =
             channelStore.CheckForClosingTx channelInfo.ChannelId
 
     let ClaimFundsOnForceClose
         (channelStore: ChannelStore)
         (channelInfo: ChannelInfo)
-        (closingTxId: string)
+        (closingTxId: TransactionIdentifier)
         (closingTxHeightOpt: Option<uint32>)
         : Async<seq<string>> =
         async {

@@ -708,7 +708,7 @@ type Node =
 
     member self.CreateRecoveryTxForRemoteForceClose
         (channelId: ChannelIdentifier)
-        (closingTxId: string)
+        (closingTxId: TransactionIdentifier)
         (requiresCpfp: bool)
         : Async<Result<string, ClosingBalanceBelowDustLimitError>> =
         async {
