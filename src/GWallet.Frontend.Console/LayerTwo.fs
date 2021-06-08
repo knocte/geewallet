@@ -440,7 +440,7 @@ module LayerTwo =
                 }
             | Some (closingTxId, _closingTxHeightOpt) ->
                 return async {
-                    Console.WriteLine(sprintf "Channel %s has been force-closed by the counterparty.")
+                    Console.WriteLine(sprintf "Channel %s has been force-closed by the counterparty." (ChannelId.ToString channelInfo.ChannelId))
                     Console.WriteLine "Account must be unlocked to recover funds."
                     let password = UserInteraction.AskPassword false
                     let nodeClient = Lightning.Connection.StartClient channelStore password
