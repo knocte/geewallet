@@ -7,6 +7,7 @@ open DotNetLightning.Chain
 open DotNetLightning.Channel
 open DotNetLightning.Serialization.Msgs
 open DotNetLightning.Utils
+open ResultUtils.Portability
 open NBitcoin
 
 open GWallet.Backend
@@ -220,7 +221,7 @@ type ChannelStore(account: NormalUtxoAccount) =
                 "A channel can only end up in the wallet if it has commitments."
         commitments.LocalParams.ToSelfDelay.Value
 
-    member self.CheckForClosingTx (channelId: ChannelIdentifier): Async<Option<TransactionIdentifier * Option<uint32>>> =
+    member self.CheckForClosingTx (channelId: ChannelIdentifier): Async<Option<ClosingTx * Option<uint32>>> =
         async {
             let serializedChannel = self.LoadChannel channelId
             let commitments = serializedChannel.Commitments
@@ -239,28 +240,78 @@ type ChannelStore(account: NormalUtxoAccount) =
                     (QuerySettings.Default ServerSelectionMode.Fast)
                     (ElectrumClient.GetBlockchainScriptHashHistory scriptHash)
                     None
-            let fundingTxId = TransactionIdentifier.FromHash serializedChannel.Commitments.FundingScriptCoin.Outpoint.Hash
 
-            let closingTxItemOpt =
-                List.tryFind
-                    (
-                        fun historyItem ->
-                            let thisTxId = TransactionIdentifier.FromHash <| uint256 historyItem.TxHash
-                            thisTxId <> fundingTxId
-                    )
-                    historyList
-
-            match closingTxItemOpt with
-            | None -> return None
-            | Some closingTxItem ->
-                let closingTxId = TransactionIdentifier.FromHash <| uint256 closingTxItem.TxHash
-                let closingTxHeightOpt =
-                    let reportedHeight = closingTxItem.Height
-                    if reportedHeight = 0u then
-                        None
+            let rec findSpendingTx (historyList: List<BlockchainScriptHashHistoryInnerResult>) (transactions: List<Transaction * Option<uint32>>) = 
+                async {
+                    if historyList.IsEmpty then
+                        return transactions
                     else
-                        Some reportedHeight
-                return Some (closingTxId, closingTxHeightOpt)
+                        let txHash = historyList.Head.TxHash
+                        let fundingTxHash = serializedChannel.Commitments.FundingScriptCoin.Outpoint.Hash
+
+                        let txHeightOpt =
+                            let reportedHeight = historyList.Head.Height
+                            if reportedHeight = 0u then
+                                None
+                            else
+                                Some reportedHeight
+
+                        let! txString =
+                            Server.Query
+                                currency
+                                (QuerySettings.Default ServerSelectionMode.Fast)
+                                (ElectrumClient.GetBlockchainTransaction txHash)
+                                None
+
+                        let tx = Transaction.Parse(txString, network)
+
+                        let isSpendingTx =
+                            Seq.exists
+                                (
+                                    fun (input: TxIn) ->
+                                        input.PrevOut.Hash = fundingTxHash
+                                )
+                                tx.Inputs
+
+                        if isSpendingTx then
+                            return!
+                                findSpendingTx historyList.Tail (transactions @ [(tx , txHeightOpt)])
+                        else
+                            return!
+                                findSpendingTx historyList.Tail transactions
+                }
+
+            let! spendingTxs =
+                findSpendingTx
+                    historyList
+                    []
+
+            let spendingTxOpt =
+                List.tryExactlyOne
+                    spendingTxs
+
+            match spendingTxOpt with
+            | None -> return None
+            | Some (spendingTx, spendingTxHeightOpt) ->
+
+                let obscuredCommitmentNumberOpt =
+                    ForceCloseFundsRecovery.tryGetObscuredCommitmentNumber
+                        commitments.FundingScriptCoin.Outpoint
+                        spendingTx
+
+                match obscuredCommitmentNumberOpt with
+                | Error _ ->
+                    return
+                        Some (
+                            ClosingTx.MutualClose { MutualCloseTx.Tx = { UtxoTransaction.NbTx = spendingTx } },
+                            spendingTxHeightOpt
+                        )
+                | Ok _ ->
+                    return
+                        Some (
+                            ClosingTx.ForceClose  { ForceCloseTx.Tx = { UtxoTransaction.NbTx = spendingTx } },
+                            spendingTxHeightOpt
+                        )
         }
 
     member self.FeeUpdateRequired (channelId: ChannelIdentifier): Async<Option<decimal>> = async {

@@ -708,7 +708,7 @@ type Node =
 
     member self.CreateRecoveryTxForRemoteForceClose
         (channelId: ChannelIdentifier)
-        (closingTxId: TransactionIdentifier)
+        (closingTx: ForceCloseTx)
         (requiresCpfp: bool)
         : Async<Result<string, ClosingBalanceBelowDustLimitError>> =
         async {
@@ -720,13 +720,6 @@ type Node =
             let commitments = serializedChannel.Commitments
             let currency = self.Account.Currency
             let network = UtxoCoin.Account.GetNetwork currency
-            let! closingTxHex =
-                Server.Query
-                    currency
-                    (QuerySettings.Default ServerSelectionMode.Fast)
-                    (ElectrumClient.GetBlockchainTransaction (closingTxId.ToString()))
-                    None
-            let closingTx = Transaction.Parse (closingTxHex, network)
             let channelPrivKeys =
                 let channelIndex = serializedChannel.ChannelIndex
                 nodeMasterPrivKey.ChannelPrivKeys channelIndex
@@ -746,7 +739,8 @@ type Node =
                     commitments.RemoteCommit
                     channelPrivKeys
                     network
-                    closingTx
+                    closingTx.Tx.NbTx
+
             match transactionBuilderResult with
             | Error (RemoteCommitmentTxRecoveryError.InvalidCommitmentTx invalidCommitmentTxError) ->
                 return failwith ("invalid commitment tx for creating recovery tx: " + invalidCommitmentTxError.Message)
@@ -761,7 +755,7 @@ type Node =
                         FeeEstimator.EstimateCpfpFee
                             transactionBuilder
                             feeRate
-                            closingTx
+                            closingTx.Tx.NbTx
                             commitments.FundingScriptCoin
                     else
                         transactionBuilder.EstimateFees (feeRate.AsNBitcoinFeeRate())

@@ -50,11 +50,17 @@ type TransactionIdentifier =
     }
     static member internal FromHash (txIdHash: NBitcoin.uint256): TransactionIdentifier =
         { DnlTxId = DotNetLightning.Utils.TxId txIdHash }
-    static member FromString (txIdString: string): TransactionIdentifier =
-        TransactionIdentifier.FromHash <| uint256 txIdString
 
     override self.ToString() =
         self.DnlTxId.Value.ToString()
+
+type UtxoTransaction =
+    internal {
+        NbTx: NBitcoin.Transaction
+    }
+
+    override self.ToString() =
+        self.NbTx.ToHex()
 
 type MonoHopUnidirectionalChannel =
     internal {

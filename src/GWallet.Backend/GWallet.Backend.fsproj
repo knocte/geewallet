@@ -83,6 +83,7 @@
     <Compile Include="UtxoCoin\Lightning\Settings.fs" />
     <Compile Include="UtxoCoin\Lightning\ScriptManagement.fs" />
     <Compile Include="UtxoCoin\Lightning\Wrappers.fs" />
+    <Compile Include="UtxoCoin\Lightning\Transactions.fs" />
     <Compile Include="UtxoCoin\Lightning\NodeEndPoint.fs" />
     <Compile Include="UtxoCoin\Lightning\JsonMarshalling.fs" />
     <Compile Include="UtxoCoin\Lightning\SerializedChannel.fs" />

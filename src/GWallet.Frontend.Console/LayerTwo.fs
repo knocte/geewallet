@@ -583,13 +583,22 @@ module LayerTwo =
     let FindRemoteForceClose
         (channelStore: ChannelStore)
         (channelInfo: ChannelInfo)
-        : Async<Option<TransactionIdentifier * Option<uint32>>> =
-            channelStore.CheckForClosingTx channelInfo.ChannelId
+        : Async<Option<ForceCloseTx * Option<uint32>>> =
+            async {
+                let! closingTx =
+                    channelStore.CheckForClosingTx channelInfo.ChannelId
+
+                match closingTx with
+                | Some (ClosingTx.ForceClose commitmentTx, closingTxDepth) ->
+                    return Some (commitmentTx, closingTxDepth)
+                | _ ->
+                    return None
+            }
 
     let ClaimFundsOnForceClose
         (channelStore: ChannelStore)
         (channelInfo: ChannelInfo)
-        (closingTxId: TransactionIdentifier)
+        (closingTx: ForceCloseTx)
         (closingTxHeightOpt: Option<uint32>)
         : Async<seq<string>> =
         async {
@@ -600,7 +609,7 @@ module LayerTwo =
             let! recoveryTxStringResult =
                 (Node.Client nodeClient).CreateRecoveryTxForRemoteForceClose
                     channelInfo.ChannelId
-                    closingTxId
+                    closingTx
                     // only use CPFP if closing transaction has not been confirmed yet
                     closingTxHeightOpt.IsNone
             match recoveryTxStringResult with
@@ -670,8 +679,8 @@ module LayerTwo =
                             async {
                                 let! remoteForceClosingTxOpt = FindRemoteForceClose channelStore channelInfo
                                 match remoteForceClosingTxOpt with
-                                | Some (closingTxId, closingTxHeightOpt) ->
-                                    return ClaimFundsOnForceClose channelStore channelInfo closingTxId closingTxHeightOpt
+                                | Some (closingTx, closingTxHeightOpt) ->
+                                    return ClaimFundsOnForceClose channelStore channelInfo closingTx closingTxHeightOpt
                                 | None ->
                                     return async {
                                         do! UpdateFeeIfNecessary channelStore channelInfo
