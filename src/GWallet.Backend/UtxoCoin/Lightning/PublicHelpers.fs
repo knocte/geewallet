@@ -45,6 +45,7 @@ module public Network =
                 return failwith <| SPrintF1 "Error when checking if channel finished closing: %s" (err :> IErrorMsg).Message
         }
 
+    let public SendHtlcPayment (nodeClient: NodeClient) = nodeClient.SendHtlcPayment
     let public SendMonoHopPayment (nodeClient: NodeClient) = nodeClient.SendMonoHopPayment
     let public ConnectLockChannelFunding (nodeClient: NodeClient) = nodeClient.ConnectLockChannelFunding
 

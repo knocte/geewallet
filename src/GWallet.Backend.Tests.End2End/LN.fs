@@ -157,6 +157,64 @@ type LN() =
             | Error err -> failwith (SPrintF1 "error when waiting for closing tx to confirm: %s" err)
         }
 
+    let SendHtlcPaymentsToLnd (clientWallet: ClientWalletInstance)
+                              (lnd: Lnd)
+                              (channelId: ChannelIdentifier)
+                              (fundingAmount: Money) =
+        async {
+            let channelInfoBeforeAnyPayment = clientWallet.ChannelStore.ChannelInfo channelId
+            match channelInfoBeforeAnyPayment.Status with
+            | ChannelStatus.Active -> ()
+            | status -> failwith (SPrintF1 "unexpected channel status. Expected Active, got %A" status)
+            let! lndBalanceBeforeAnyPayment = lnd.Balance()
+
+            let! sendHtlcPayment1Res =
+                let transferAmount =
+                    let accountBalance = Money(channelInfoBeforeAnyPayment.SpendableBalance, MoneyUnit.BTC)
+                    TransferAmount (walletToWalletTestPayment1Amount.ToDecimal MoneyUnit.BTC, accountBalance.ToDecimal MoneyUnit.BTC, Currency.BTC)
+                Lightning.Network.SendHtlcPayment
+                    clientWallet.NodeClient
+                    channelId
+                    transferAmount
+            UnwrapResult sendHtlcPayment1Res "SendHtlcPayment failed"
+
+            let channelInfoAfterPayment1 = clientWallet.ChannelStore.ChannelInfo channelId
+            match channelInfoAfterPayment1.Status with
+            | ChannelStatus.Active -> ()
+            | status -> failwith (SPrintF1 "unexpected channel status. Expected Active, got %A" status)
+
+            let! lndBalanceAfterPayment1 = lnd.Balance()
+
+            if Money(channelInfoAfterPayment1.Balance, MoneyUnit.BTC) <> fundingAmount - walletToWalletTestPayment1Amount then
+                failwith "incorrect balance after payment 1"
+            if lndBalanceAfterPayment1 <> lndBalanceBeforeAnyPayment + walletToWalletTestPayment1Amount then
+                failwith "incorrect lnd balance after payment 1"
+
+            let! sendHtlcPayment2Res =
+                let transferAmount =
+                    let accountBalance = Money(channelInfoAfterPayment1.SpendableBalance, MoneyUnit.BTC)
+                    TransferAmount (
+                        walletToWalletTestPayment2Amount.ToDecimal MoneyUnit.BTC,
+                        accountBalance.ToDecimal MoneyUnit.BTC, Currency.BTC
+                    )
+                Lightning.Network.SendHtlcPayment
+                    clientWallet.NodeClient
+                    channelId
+                    transferAmount
+            UnwrapResult sendHtlcPayment2Res "SendHtlcPayment failed"
+
+            let channelInfoAfterPayment2 = clientWallet.ChannelStore.ChannelInfo channelId
+            match channelInfoAfterPayment2.Status with
+            | ChannelStatus.Active -> ()
+            | status -> failwith (SPrintF1 "unexpected channel status. Expected Active, got %A" status)
+            let! lndBalanceAfterPayment2 = lnd.Balance()
+
+            if Money(channelInfoAfterPayment2.Balance, MoneyUnit.BTC) <> fundingAmount - walletToWalletTestPayment1Amount - walletToWalletTestPayment2Amount then
+                failwith "incorrect balance after payment 2"
+            if lndBalanceAfterPayment2 <> lndBalanceAfterPayment1 + walletToWalletTestPayment2Amount then
+                failwith "incorrect lnd balance after payment 2"
+        }
+
     let SendMonoHopPayments (clientWallet: ClientWalletInstance) channelId fundingAmount =
         async {
             let channelInfoBeforeAnyPayment = clientWallet.ChannelStore.ChannelInfo channelId
@@ -371,6 +429,17 @@ type LN() =
 
         TearDown clientWallet lnd electrumServer bitcoind
     }
+
+    [<Test>]
+    [<Ignore "not ready yet">]
+    member __.``can open channel with LND and send htlcs``() = Async.RunSynchronously <| async {
+        let! channelId, clientWallet, bitcoind, electrumServer, lnd, fundingAmount = OpenChannelWithFundee None
+
+        do! SendHtlcPaymentsToLnd clientWallet lnd channelId fundingAmount
+
+        TearDown clientWallet lnd electrumServer bitcoind
+    }
+
 
     [<Test>]
     member __.``can close channel with LND``() = Async.RunSynchronously <| async {

@@ -271,6 +271,12 @@ type NodeClient internal (channelStore: ChannelStore, nodeMasterPrivKey: NodeMas
                 return Ok <| PendingChannel(outgoingUnfundedChannel)
     }
 
+    member internal self.SendHtlcPayment (_channelId: ChannelIdentifier)
+                                         (_transferAmount: TransferAmount)
+                                             : Async<Result<unit, IErrorMsg>> = async {
+        return failwith "unimplemented"
+    }
+
     member internal self.SendMonoHopPayment (channelId: ChannelIdentifier)
                                             (transferAmount: TransferAmount)
                                                 : Async<Result<unit, IErrorMsg>> = async {
