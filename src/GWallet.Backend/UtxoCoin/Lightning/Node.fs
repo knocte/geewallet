@@ -6,6 +6,7 @@ open System.Net
 
 open NBitcoin
 open DotNetLightning.Utils
+open ResultUtils.Portability
 
 open GWallet.Backend
 open GWallet.Backend.UtxoCoin

@@ -3,11 +3,10 @@ namespace GWallet.Backend.UtxoCoin.Lightning
 open System
 open System.Net
 
-open FSharp.Core
-
 open NBitcoin
 open DotNetLightning.Serialize.Msgs
 open DotNetLightning.Utils
+open ResultUtils.Portability
 
 open GWallet.Backend
 open GWallet.Backend.FSharpUtil.UwpHacks

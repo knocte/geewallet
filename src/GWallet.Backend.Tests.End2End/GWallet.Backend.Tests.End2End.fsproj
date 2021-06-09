@@ -127,13 +127,13 @@
       <HintPath>..\..\packages\BTCPayServer.Lightning.Ptarmigan.1.0.0.8\lib\netstandard2.0\BTCPayServer.Lightning.Ptarmigan.dll</HintPath>
     </Reference>
     <Reference Include="DotNetLightning.Core">
-      <HintPath>..\..\packages\DotNetLightning.Kiss.1.1.2-date20200629-1231-git-0d7ca38\lib\netstandard2.0\DotNetLightning.Core.dll</HintPath>
+      <HintPath>..\..\packages\DotNetLightning.Kiss.1.1.2-date20210209-0415-git-1668246\lib\netstandard2.0\DotNetLightning.Core.dll</HintPath>
     </Reference>
     <Reference Include="InternalBech32Encoder">
-      <HintPath>..\..\packages\DotNetLightning.Kiss.1.1.2-date20200629-1231-git-0d7ca38\lib\netstandard2.0\InternalBech32Encoder.dll</HintPath>
+      <HintPath>..\..\packages\DotNetLightning.Kiss.1.1.2-date20210209-0415-git-1668246\lib\netstandard2.0\InternalBech32Encoder.dll</HintPath>
     </Reference>
     <Reference Include="ResultUtils">
-      <HintPath>..\..\packages\DotNetLightning.Kiss.1.1.2-date20200629-1231-git-0d7ca38\lib\netstandard2.0\ResultUtils.dll</HintPath>
+      <HintPath>..\..\packages\DotNetLightning.Kiss.1.1.2-date20210209-0415-git-1668246\lib\netstandard2.0\ResultUtils.dll</HintPath>
     </Reference>
     <Reference Include="System.Memory">
       <HintPath>..\..\packages\System.Memory.4.5.3\lib\netstandard2.0\System.Memory.dll</HintPath>

@@ -5,11 +5,10 @@ open System.Net.Sockets
 open System.Net
 open System.Diagnostics
 
-open FSharp.Core
-
 open NBitcoin
 open DotNetLightning.Peer
 open DotNetLightning.Utils
+open ResultUtils.Portability
 
 open GWallet.Backend
 open GWallet.Backend.FSharpUtil

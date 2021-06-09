@@ -9,12 +9,11 @@ open DotNetLightning.Chain
 open DotNetLightning.Channel
 open DotNetLightning.Transactions
 open DotNetLightning.Utils
+open ResultUtils.Portability
 
 open GWallet.Backend
 open GWallet.Backend.FSharpUtil.UwpHacks
 open GWallet.Backend.UtxoCoin
-
-open FSharp.Core
 
 type internal OpenChannelError =
     | InvalidChannelParameters of PeerNode * ChannelError

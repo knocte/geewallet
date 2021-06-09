@@ -7,10 +7,10 @@ open NBitcoin
 open DotNetLightning.Serialize.Msgs
 open DotNetLightning.Serialize
 open DotNetLightning.Utils
+open ResultUtils.Portability
 
 open GWallet.Backend
 open GWallet.Backend.FSharpUtil.UwpHacks
-open FSharp.Core
 
 type InitializeError =
     | ReceiveInit of RecvBytesError

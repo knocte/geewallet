@@ -4,11 +4,15 @@ open System
 open System.Linq
 open System.Threading.Tasks
 open System.Runtime.ExceptionServices
+
+open ResultUtils.Portability
+
 #if STRICTER_COMPILATION_BUT_WITH_REFLECTION_AT_RUNTIME
 open Microsoft.FSharp.Reflection
 #endif
 
 // FIXME: replace all usages of the below with native FSharp.Core's Result type (https://docs.microsoft.com/en-us/dotnet/fsharp/language-reference/results)
+// when the stockmono_* lanes can use at least F# v4.5
 type Either<'Val, 'Err when 'Err :> Exception> =
     | FailureResult of 'Err
     | SuccessfulValue of 'Val

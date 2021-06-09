@@ -4,6 +4,8 @@ open System.Linq
 open System.Text.RegularExpressions
 open System.Net
 
+open ResultUtils.Portability
+
 open GWallet.Backend.FSharpUtil
 open GWallet.Backend.UtxoCoin
 open GWallet.Backend.UtxoCoin.Lightning

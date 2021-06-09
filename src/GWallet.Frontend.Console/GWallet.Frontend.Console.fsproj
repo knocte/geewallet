@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="14.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
@@ -97,5 +97,11 @@
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.Configuration" />
     <Reference Include="System.Net.Http" />
+
+    <!-- FIXME: we should not need to reference ResultUtils at all when we can upgrade to F#v4.5 across the board (all CI lanes) -->
+    <Reference Include="ResultUtils">
+      <HintPath>..\..\packages\DotNetLightning.Kiss.1.1.2-date20210209-0415-git-1668246\lib\netstandard2.0\ResultUtils.dll</HintPath>
+    </Reference>
+
   </ItemGroup>
 </Project>
