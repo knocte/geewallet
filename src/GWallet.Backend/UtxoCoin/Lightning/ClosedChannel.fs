@@ -267,14 +267,14 @@ type ClosedChannel()=
                                 connectedChannelAfterClosingSignedReceived.Channel.ExecuteCommand
                                     closingSignedCmd
                                 <| function
-                                | (WeProposedNewClosingSigned (msg, _)) :: [] -> Some(Some msg, None)
-                                | (MutualClosePerformed (finalizedTx, _)) :: [] -> Some(None, Some finalizedTx)
+                                | (WeProposedNewClosingSigned (msg, _)) :: [] -> Some(Some msg, None, None)
+                                | (MutualClosePerformed (finalizedTx, _, nextMessage)) :: [] -> Some(None, Some finalizedTx, nextMessage)
                                 | _ -> None
 
                             match closingSignedResponseResult with
                             | Ok closingSignedResponseMsg ->
                                 match closingSignedResponseMsg with
-                                | (Some msg, None) ->
+                                | (Some msg, None, None) ->
                                     Infrastructure.LogDebug "Responding with new closingSigned"
                                     Infrastructure.LogDebug(SPrintF1 "ClosingSigned: %A" msg)
                                     let! peerWrapperAfterClosingSignedResponse =
@@ -288,10 +288,20 @@ type ClosedChannel()=
                                     let! result = exchange connectedChannelAfterClosingSignedResponse
 
                                     return result
-                                | (None, Some finalizedTx) ->
+                                | (None, Some finalizedTx, maybeNextMessage) ->
                                     Infrastructure.LogDebug "Mutual close performed"
                                     Infrastructure.LogDebug(SPrintF1 "FinalizedTX: %A" finalizedTx)
                                     Infrastructure.LogDebug(SPrintF1 "ourPayoutScript: %A" ourPayoutScript)
+
+                                    let! peerWrapperAfterMutualClosePerformed =
+                                        match maybeNextMessage with
+                                        | Some (nextMessage) ->
+                                            Infrastructure.LogDebug "Resending agreed closing_signed message"
+                                            peerWrapperAfterClosingSignedReceived.SendMsg nextMessage
+                                        | None ->
+                                            async {
+                                                return peerWrapperAfterClosingSignedReceived
+                                            }
 
                                     let! _txid =
                                         let signedTx: string = finalizedTx.Value.ToHex()
@@ -303,7 +313,7 @@ type ClosedChannel()=
 
                                     let connectedChannelAfterMutualClosePerformed =
                                         { connectedChannelAfterClosingSignedReceived with
-                                              PeerNode = peerWrapperAfterClosingSignedReceived
+                                              PeerNode = peerWrapperAfterMutualClosePerformed
                                               Channel = channelWrapperAfterClosingSignedResponse }
 
                                     connectedChannelAfterMutualClosePerformed.SaveToWallet()
