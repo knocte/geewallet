@@ -21,11 +21,12 @@ module public ForceCloseTransaction =
         async {
             let transactionBuilder =
                 ForceCloseFundsRecovery.createPenaltyTx
-                    commitments.LocalParams
+                    commitments.IsFunder
                     commitments.RemoteParams
                     perCommitmentSecret
                     commitments.RemoteCommit
                     localChannelPrivKeys
+                    commitments.RemoteChannelPubKeys
                     network
 
             let targetAddress =
@@ -41,16 +42,16 @@ module public ForceCloseTransaction =
             let reward =
                 let toLocal =
                     (Commitments.RemoteCommitAmount
+                        commitments.IsFunder
                         commitments.RemoteParams
-                        commitments.LocalParams
                         commitments.RemoteCommit)
                             .ToLocal
                             .ToDecimal(MoneyUnit.Satoshi)
 
                 let toRemote =
                     (Commitments.RemoteCommitAmount
+                        commitments.IsFunder
                         commitments.RemoteParams
-                        commitments.LocalParams
                         commitments.RemoteCommit)
                             .ToRemote
                             .ToDecimal(MoneyUnit.Satoshi)

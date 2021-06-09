@@ -23,7 +23,7 @@ type SerializedCommitmentSpec =
 
 type SerializedCommitments =
     {
-        ChannelId: ChannelIdentifier
+        IsFunder: bool
         ChannelFlags: uint8
         FundingScriptCoin: ScriptCoin
         LocalChanges: LocalChanges
@@ -33,10 +33,10 @@ type SerializedCommitments =
         OriginChannels: Map<HTLCId, HTLCSource>
         RemoteChanges: RemoteChanges
         RemoteCommit: RemoteCommit
-        RemoteNextCommitInfo: RemoteNextCommitInfo
         RemoteNextHTLCId: HTLCId
         RemoteParams: RemoteParams
         RemotePerCommitmentSecrets: PerCommitmentSecretStore
+        RemoteChannelPubKeys: ChannelPubKeys
     }
 
 type private CommitmentsJsonConverter() =
@@ -48,7 +48,6 @@ type private CommitmentsJsonConverter() =
             RemotePerCommitmentSecrets = serializedCommitments.RemotePerCommitmentSecrets
             RemoteParams = serializedCommitments.RemoteParams
             RemoteNextHTLCId = serializedCommitments.RemoteNextHTLCId
-            RemoteNextCommitInfo = serializedCommitments.RemoteNextCommitInfo
             RemoteCommit = serializedCommitments.RemoteCommit
             RemoteChanges = serializedCommitments.RemoteChanges
             OriginChannels = serializedCommitments.OriginChannels
@@ -57,14 +56,14 @@ type private CommitmentsJsonConverter() =
             LocalCommit = serializedCommitments.LocalCommit
             LocalChanges = serializedCommitments.LocalChanges
             FundingScriptCoin = serializedCommitments.FundingScriptCoin
-            ChannelId = serializedCommitments.ChannelId.DnlChannelId
             ChannelFlags = serializedCommitments.ChannelFlags
+            IsFunder = serializedCommitments.IsFunder
+            RemoteChannelPubKeys = serializedCommitments.RemoteChannelPubKeys
         }
         commitments
 
     override __.WriteJson(writer: JsonWriter, state: Commitments, serializer: JsonSerializer) =
         serializer.Serialize(writer, {
-            ChannelId = ChannelIdentifier.FromDnl state.ChannelId
             ChannelFlags = state.ChannelFlags
             FundingScriptCoin = state.FundingScriptCoin
             LocalChanges = state.LocalChanges
@@ -74,10 +73,11 @@ type private CommitmentsJsonConverter() =
             OriginChannels = state.OriginChannels
             RemoteChanges = state.RemoteChanges
             RemoteCommit = state.RemoteCommit
-            RemoteNextCommitInfo = state.RemoteNextCommitInfo
             RemoteNextHTLCId = state.RemoteNextHTLCId
             RemoteParams = state.RemoteParams
             RemotePerCommitmentSecrets = state.RemotePerCommitmentSecrets
+            RemoteChannelPubKeys = state.RemoteChannelPubKeys
+            IsFunder = state.IsFunder
         })
 
 type SerializedChannel =
@@ -85,6 +85,7 @@ type SerializedChannel =
         ChannelIndex: int
         Network: Network
         ChanState: ChannelState
+        Commitments: Commitments
         AccountFileName: string
         // FIXME: should store just RemoteNodeEndPoint instead of CounterpartyIP+RemoteNodeId?
         CounterpartyIP: IPEndPoint
@@ -92,6 +93,7 @@ type SerializedChannel =
         LocalForceCloseSpendingTxOpt: Option<string>
         // this is the amount of confirmations that the counterparty told us that the funding transaction needs
         MinSafeDepth: BlockHeightOffset32
+        LocalChannelPubKeys: ChannelPubKeys
     }
     static member LightningSerializerSettings currency: JsonSerializerSettings =
         let settings = JsonMarshalling.SerializerSettings
@@ -104,14 +106,8 @@ type SerializedChannel =
 
         settings
 
-    member internal self.Commitments: Commitments =
-        UnwrapOption
-            self.ChanState.Commitments
-            "A SerializedChannel is only created once a channel has started \
-            being established and must therefore have an initial commitment"
-
-    member self.IsFunder: bool =
-        self.Commitments.LocalParams.IsFunder
+    member internal self.IsFunder(): bool =
+        self.Commitments.IsFunder
 
     member internal self.Capacity(): Money =
         self.Commitments.FundingScriptCoin.Amount
@@ -119,8 +115,16 @@ type SerializedChannel =
     member internal self.Balance(): DotNetLightning.Utils.LNMoney =
         self.Commitments.LocalCommit.Spec.ToLocal
 
-    member internal self.SpendableBalance(): DotNetLightning.Utils.LNMoney =
-        self.Commitments.SpendableBalance()
+    member internal self.SpendableBalance(): LNMoney =
+        let remoteNextCommitInfoOpt =
+            match self.ChanState with
+            | ChannelState.WaitForFundingConfirmed _ -> None
+            | ChannelState.WaitForFundingLocked _ -> None
+            | ChannelState.Normal data -> Some data.RemoteNextCommitInfo
+            | ChannelState.Shutdown data -> Some data.RemoteNextCommitInfo
+            | ChannelState.Negotiating data -> Some data.RemoteNextCommitInfo
+            | ChannelState.Closing data -> Some data.RemoteNextCommitInfo
+        self.Commitments.SpendableBalance remoteNextCommitInfoOpt
 
     // How low the balance can go. A channel must maintain enough balance to
     // cover the channel reserve. The funder must also keep enough in the
@@ -136,7 +140,7 @@ type SerializedChannel =
         let channelReserve =
             LNMoney.FromMoney self.Commitments.LocalParams.ChannelReserveSatoshis
         let fee =
-            if self.IsFunder then
+            if self.IsFunder() then
                 let feeRate = self.Commitments.LocalCommit.Spec.FeeRatePerKw
                 let weight = COMMITMENT_TX_BASE_WEIGHT
                 LNMoney.FromMoney <| feeRate.CalculateFeeFromWeight weight
@@ -144,6 +148,7 @@ type SerializedChannel =
                 LNMoney.Zero
         capacity - channelReserve - fee
 
-    member self.ChannelId: ChannelIdentifier =
-        ChannelIdentifier.FromDnl self.Commitments.ChannelId
+    member internal self.ChannelId (): ChannelIdentifier =
+        self.Commitments.ChannelId()
+        |> ChannelIdentifier.FromDnl 
 

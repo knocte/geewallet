@@ -114,6 +114,19 @@ and internal PeerNode =
         return { self with MsgStream = msgStream }
     }
 
+    member internal self.SendError (err: string)
+                                   (channelIdOpt: Option<ChannelId>)
+                                       : Async<PeerNode> = async {
+        let errorMsg = {
+            ChannelId =
+                match channelIdOpt with
+                | Some channelId -> WhichChannel.SpecificChannel channelId
+                | None -> WhichChannel.All
+            Data = System.Text.Encoding.ASCII.GetBytes err
+        }
+        return! self.SendMsg errorMsg
+    }
+
     member internal self.RecvChannelMsg(): Async<Result<PeerNode * IChannelMsg, RecvChannelMsgError>> =
         let rec recv (msgStream: MsgStream) = async {
             let! recvMsgRes = msgStream.RecvMsg()

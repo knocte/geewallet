@@ -3,7 +3,9 @@
 open NBitcoin
 
 open GWallet.Backend
+open GWallet.Backend.FSharpUtil
 open GWallet.Backend.UtxoCoin
+open DotNetLightning.Utils
 
 module ScriptManager =
     // Used for e.g. option_upfront_shutdown_script in
@@ -12,4 +14,4 @@ module ScriptManager =
         let baseAccount = account :> IAccount
         let network = Account.GetNetwork baseAccount.Currency
         let scriptAddress = BitcoinScriptAddress (baseAccount.PublicAddress, network)
-        scriptAddress.ScriptPubKey
+        UnwrapResult (ShutdownScriptPubKey.TryFromScript scriptAddress.ScriptPubKey) "should not happen"

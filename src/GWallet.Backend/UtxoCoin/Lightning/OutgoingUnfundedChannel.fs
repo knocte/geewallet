@@ -6,6 +6,7 @@ open System.Diagnostics
 open NBitcoin
 open DotNetLightning.Chain
 open DotNetLightning.Channel
+open DotNetLightning.Crypto
 open DotNetLightning.Serialization.Msgs
 open DotNetLightning.Utils
 open ResultUtils.Portability
@@ -47,7 +48,11 @@ type internal OpenChannelError =
 
 type internal OutgoingUnfundedChannel =
     {
-        ConnectedChannel: ConnectedChannel
+        PeerNode: PeerNode
+        ChannelWaitingForFundingTx: ChannelWaitingForFundingTx
+        Account: NormalUtxoAccount
+        MinimumDepth: BlockHeightOffset32
+        ChannelIndex: int
         FundingDestination: IDestination
         TransferAmount: TransferAmount
     }
@@ -60,43 +65,41 @@ type internal OutgoingUnfundedChannel =
         let channelIndex =
             let random = Org.BouncyCastle.Security.SecureRandom() :> Random
             random.Next(1, Int32.MaxValue / 2)
-        let! channel =
-            MonoHopUnidirectionalChannel.Create
-                nodeId
-                account
-                nodeMasterPrivKey
-                channelIndex
-                WaitForInitInternal
+        let channelPrivKeys = nodeMasterPrivKey.ChannelPrivKeys channelIndex
+        let currency = (account :> IAccount).Currency
+        let! feeEstimator = FeeEstimator.Create currency
+        let network = UtxoCoin.Account.GetNetwork currency
+        let defaultFinalScriptPubKey = ScriptManager.CreatePayoutScript account
         let localParams =
             let funding = Money(channelCapacity.ValueToSend, MoneyUnit.BTC)
-            let defaultFinalScriptPubKey = ScriptManager.CreatePayoutScript account
-            channel.LocalParams funding defaultFinalScriptPubKey true
+            Settings.GetLocalParams funding
         let temporaryChannelId = ChannelIdentifier.NewRandom()
         let feeRate =
-            channel.Channel.FeeEstimator.GetEstSatPer1000Weight ConfirmationTarget.Normal
-        let openChannelMsgRes, channelAfterOpenChannel =
-            let channelCommand =
-                let inputInitFunder = {
-                    InputInitFunder.PushMSat = LNMoney 0L
-                    TemporaryChannelId = temporaryChannelId.DnlChannelId
-                    FundingSatoshis = Money (channelCapacity.ValueToSend, MoneyUnit.BTC)
-                    InitFeeRatePerKw = feeRate
-                    FundingTxFeeRatePerKw = feeRate
-                    LocalParams = localParams
-                    RemoteInit = peerNode.InitMsg
-                    ChannelFlags = 0uy
-                    ChannelPrivKeys = channel.ChannelPrivKeys
-                }
-                ChannelCommand.CreateOutbound inputInitFunder
-            channel.ExecuteCommand channelCommand <| function
-                | NewOutboundChannelStarted(openChannelMsg, _)::[] -> Some openChannelMsg
-                | _ -> None
-        match openChannelMsgRes with
+            (feeEstimator :> IFeeEstimator).GetEstSatPer1000Weight ConfirmationTarget.Normal
+        let channelWaitingForAcceptChannelRes =
+            Channel.NewOutbound(
+                Settings.PeerLimits,
+                MonoHopUnidirectionalChannel.DefaultChannelOptions (),
+                nodeMasterPrivKey,
+                channelIndex,
+                feeEstimator,
+                network,
+                nodeId,
+                Some defaultFinalScriptPubKey,
+                temporaryChannelId.DnlChannelId,
+                Money (channelCapacity.ValueToSend, MoneyUnit.BTC),
+                LNMoney 0L,
+                feeRate,
+                localParams,
+                peerNode.InitMsg,
+                0uy,
+                channelPrivKeys
+            )
+        match channelWaitingForAcceptChannelRes with
         | Error channelError ->
             return Error <| InvalidChannelParameters (peerNode, channelError)
-        | Ok openChannelMsg ->
+        | Ok (openChannelMsg, channelWaitingForAcceptChannel) ->
             let! peerNodeAfterOpenChannel = peerNode.SendMsg openChannelMsg
-
             Infrastructure.LogDebug "Receiving accept_channel..."
             let! recvChannelMsgRes = peerNodeAfterOpenChannel.RecvChannelMsg()
             match recvChannelMsgRes with
@@ -108,36 +111,27 @@ type internal OutgoingUnfundedChannel =
             | Ok (peerNodeAfterAcceptChannel, channelMsg) ->
                 match channelMsg with
                 | :? AcceptChannelMsg as acceptChannelMsg ->
-                    let fundingParametersRes, channelAfterAcceptChannel =
-                        let channelCmd = ApplyAcceptChannel acceptChannelMsg
-                        channelAfterOpenChannel.ExecuteCommand channelCmd <| function
-                            | (WeAcceptedAcceptChannel(fundingDestination, fundingAmount, _)::[])
-                                -> Some (fundingDestination, fundingAmount)
-                            | _ -> None
-                    match fundingParametersRes with
+                    let channelWaitingForFundingTxRes =
+                        channelWaitingForAcceptChannel.ApplyAcceptChannel
+                            acceptChannelMsg
+                    match channelWaitingForFundingTxRes with
                     | Error err ->
                         return Error <| InvalidAcceptChannel
                             (peerNodeAfterAcceptChannel, err)
-                    | Ok (fundingDestination, fundingAmount) ->
+                    | Ok (fundingDestination, fundingAmount, channelWaitingForFundingTx) ->
                         assert ((fundingAmount.ToUnit MoneyUnit.BTC) = channelCapacity.ValueToSend)
                         let minimumDepth = acceptChannelMsg.MinimumDepth
-                        let connectedChannel = {
+                        let outgoingUnfundedChannel = {
                             PeerNode = peerNodeAfterAcceptChannel
-                            Channel = channelAfterAcceptChannel
+                            ChannelWaitingForFundingTx = channelWaitingForFundingTx
                             Account = account
                             // TODO: move this into FundedChannel?
                             MinimumDepth = minimumDepth
                             ChannelIndex = channelIndex
-                        }
-                        let outgoingUnfundedChannel = {
-                            ConnectedChannel = connectedChannel
                             FundingDestination = fundingDestination
                             TransferAmount = channelCapacity
                         }
                         return Ok outgoingUnfundedChannel
                 | _ -> return Error <| ExpectedAcceptChannel channelMsg
     }
-
-    member internal self.MinimumDepth
-        with get(): BlockHeightOffset32 = self.ConnectedChannel.MinimumDepth
 

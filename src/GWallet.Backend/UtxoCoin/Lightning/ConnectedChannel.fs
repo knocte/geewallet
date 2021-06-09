@@ -93,20 +93,14 @@ type internal ConnectedChannel =
                 nodeMasterPrivKey
                 serializedChannel.ChannelIndex
                 serializedChannel.ChanState
+                serializedChannel.Commitments
         return serializedChannel, channel
     }
 
     static member private Reestablish (peerNode: PeerNode)
                                       (channel: MonoHopUnidirectionalChannel)
                                           : Async<Result<PeerNode * MonoHopUnidirectionalChannel, ReestablishError>> = async {
-        let channelId =
-            match channel.ChannelId with
-            | Some channelId -> channelId
-            | None ->
-                failwith
-                    "A channel can only be reestablished if it has previously been \
-                    established and therefore has a channel id"
-
+        let channelId = channel.ChannelId
         let ourReestablishMsgRes, channelAfterReestablishSent =
             let channelCmd = ChannelCommand.CreateChannelReestablish
             channel.ExecuteCommand channelCmd <| function
@@ -229,10 +223,12 @@ type internal ConnectedChannel =
             Network = self.Channel.Network
             RemoteNodeId = self.PeerNode.RemoteNodeId
             ChanState = self.Channel.Channel.State
+            Commitments = self.Channel.Channel.Commitments
             AccountFileName = self.Account.AccountFile.Name
             CounterpartyIP = self.PeerNode.PeerId.Value :?> IPEndPoint
             MinSafeDepth = self.MinimumDepth
             LocalForceCloseSpendingTxOpt = None
+            LocalChannelPubKeys = self.Channel.ChannelPrivKeys.ToChannelPubKeys()
         }
         channelStore.SaveChannel serializedChannel
 
@@ -244,30 +240,18 @@ type internal ConnectedChannel =
 
     member self.ChannelId
         with get(): ChannelIdentifier =
-            UnwrapOption
-                self.Channel.ChannelId
-                "A ConnectedChannel guarantees that a channel is connected and \
-                therefore has a channel id"
+            self.Channel.ChannelId
 
     member self.FundingTxId
         with get(): TransactionIdentifier =
-            UnwrapOption
-                self.Channel.FundingTxId
-                "A ConnectedChannel guarantees that a channel has been \
-                established and therefore has a funding txid"
+            self.Channel.FundingTxId
 
     member internal self.FundingScriptCoin
-        with get(): Option<ScriptCoin> = self.Channel.FundingScriptCoin
+        with get(): ScriptCoin =
+            self.Channel.FundingScriptCoin
 
     member self.SendError (err: string): Async<ConnectedChannel> = async {
-        let errorMsg = {
-            ChannelId =
-                match self.Channel.Channel.State.ChannelId with
-                | Some channelId -> WhichChannel.SpecificChannel channelId
-                | _ -> WhichChannel.All
-            Data = System.Text.Encoding.ASCII.GetBytes err
-        }
-        let! peerNode = self.PeerNode.SendMsg errorMsg
+        let! peerNode = self.PeerNode.SendError err (self.Channel.Channel.Commitments.ChannelId() |> Some)
         return {
             self with
                 PeerNode = peerNode

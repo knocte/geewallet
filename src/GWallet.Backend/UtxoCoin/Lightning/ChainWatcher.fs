@@ -59,12 +59,12 @@ module public ChainWatcher =
         
                 match obscuredCommitmentNumberOpt with
                 | Ok obscuredCommitmentNumber ->
-                    let localChannelPubKeys = commitments.LocalParams.ChannelPubKeys
-                    let remoteChannelPubKeys = commitments.RemoteParams.ChannelPubKeys
+                    let localChannelPubKeys = serializedChannel.LocalChannelPubKeys
+                    let remoteChannelPubKeys = commitments.RemoteChannelPubKeys
         
                     let commitmentNumber =
                         obscuredCommitmentNumber.Unobscure
-                            commitments.LocalParams.IsFunder
+                            commitments.IsFunder
                             localChannelPubKeys.PaymentBasepoint
                             remoteChannelPubKeys.PaymentBasepoint
         

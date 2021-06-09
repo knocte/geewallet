@@ -169,7 +169,7 @@ type PendingChannel internal (outgoingUnfundedChannel: OutgoingUnfundedChannel) 
     member internal self.OutgoingUnfundedChannel = outgoingUnfundedChannel
 
     member __.Currency: Currency =
-        (outgoingUnfundedChannel.ConnectedChannel.Account :> IAccount).Currency
+        (outgoingUnfundedChannel.Account :> IAccount).Currency
 
     member self.FundingDestinationString(): string =
         let network = UtxoCoin.Account.GetNetwork self.Currency
@@ -180,8 +180,7 @@ type PendingChannel internal (outgoingUnfundedChannel: OutgoingUnfundedChannel) 
     member public self.AcceptWithFundingTx (fundingTransactionHex: string)
                                                : Async<Result<ChannelIdentifier * TransactionIdentifier, IErrorMsg>> = async {
         let! fundedChannelRes =
-            let connectedChannel = self.OutgoingUnfundedChannel.ConnectedChannel
-            let account = connectedChannel.Account
+            let account = self.OutgoingUnfundedChannel.Account
             let network = Account.GetNetwork (account :> IAccount).Currency
             let hex = DataEncoders.HexEncoder()
             let fundingTransaction =
@@ -204,7 +203,7 @@ type PendingChannel internal (outgoingUnfundedChannel: OutgoingUnfundedChannel) 
     member public self.Accept (metadata: TransactionMetadata)
                               (password: string)
                                   : Async<Result<ChannelIdentifier * TransactionIdentifier, IErrorMsg>> =
-        let account = self.OutgoingUnfundedChannel.ConnectedChannel.Account
+        let account = self.OutgoingUnfundedChannel.Account
         let transaction =
             Account.SignTransactionForDestination
                 account
@@ -581,7 +580,7 @@ type NodeServer internal (channelStore: ChannelStore, transportListener: Transpo
 
     member internal self.AcceptUpdateFee (channelId: ChannelIdentifier): Async<Result<unit, IErrorMsg>> = async {
         let serializedChannel = self.ChannelStore.LoadChannel channelId
-        if serializedChannel.IsFunder then
+        if serializedChannel.IsFunder() then
             return failwith "AcceptUpdateFee called on non-fundee channel"
         else
             let! activeChannelRes =
@@ -656,10 +655,11 @@ type Node =
                     }
                     let transactionBuilderResult =
                         ForceCloseFundsRecovery.tryGetFundsFromLocalCommitmentTx
+                            commitments.IsFunder
                             commitments.LocalParams
-                            commitments.RemoteParams
                             commitments.FundingScriptCoin
                             channelPrivKeys
+                            commitments.RemoteChannelPubKeys
                             network
                             commitmentTx
                     match transactionBuilderResult with
@@ -732,12 +732,12 @@ type Node =
             }
             let transactionBuilderResult =
                 ForceCloseFundsRecovery.tryGetFundsFromRemoteCommitmentTx
-                    commitments.LocalParams
-                    commitments.RemoteParams
+                    commitments.IsFunder
                     commitments.FundingScriptCoin
                     commitments.RemotePerCommitmentSecrets
                     commitments.RemoteCommit
                     channelPrivKeys
+                    commitments.RemoteChannelPubKeys
                     network
                     closingTx.Tx.NbTx
 

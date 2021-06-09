@@ -4,6 +4,7 @@ open System
 
 open NBitcoin
 open DotNetLightning.Channel
+open DotNetLightning.Crypto
 open DotNetLightning.Transactions
 open DotNetLightning.Utils
 open DotNetLightning.Serialization.Msgs
@@ -94,12 +95,13 @@ type internal FundedChannel =
     static member internal FundChannel (outgoingUnfundedChannel: OutgoingUnfundedChannel)
                                        (fundingTransaction: Transaction)
                                            : Async<Result<FundedChannel, FundChannelError>> = async {
-        let connectedChannel = outgoingUnfundedChannel.ConnectedChannel
-        let currency = (connectedChannel.Account :> IAccount).Currency
-        let peerNode = connectedChannel.PeerNode
-        let channel = connectedChannel.Channel
 
-        let fundingCreatedMsgRes, channelAfterFundingCreated =
+        let account = outgoingUnfundedChannel.Account
+        let currency = (account :> IAccount).Currency
+        let peerNode = outgoingUnfundedChannel.PeerNode
+        let channelWaitingForFundingTx = outgoingUnfundedChannel.ChannelWaitingForFundingTx
+
+        let channelWaitingForFundingSignedRes =
             let fundingOutputIndex =
                 let indexedOutputs = fundingTransaction.Outputs.AsIndexedOutputs()
                 let hasRightDestination (indexedOutput: IndexedTxOut): bool =
@@ -108,15 +110,13 @@ type internal FundedChannel =
                     Seq.find hasRightDestination indexedOutputs
                 TxOutIndex <| uint16 matchingOutput.N
             let finalizedFundingTransaction = FinalizedTx fundingTransaction
-            let channelCmd = CreateFundingTx(finalizedFundingTransaction, fundingOutputIndex)
-            channel.ExecuteCommand channelCmd <| function
-                | (WeCreatedFundingTx(fundingCreatedMsg, _)::[])
-                    -> Some fundingCreatedMsg
-                | _ -> None
-        match fundingCreatedMsgRes with
+            channelWaitingForFundingTx.CreateFundingTx
+                finalizedFundingTransaction
+                fundingOutputIndex
+        match channelWaitingForFundingSignedRes with
         | Error err ->
             return failwith <| SPrintF1 "DNL rejected our funding tx: %s" (err.ToString())
-        | Ok fundingCreatedMsg ->
+        | Ok (fundingCreatedMsg, channelWaitingForFundingSigned) ->
             let! peerNodeAfterFundingCreated =
                 peerNode.SendMsg fundingCreatedMsg
             let! recvChannelMsgRes = peerNodeAfterFundingCreated.RecvChannelMsg()
@@ -128,29 +128,30 @@ type internal FundedChannel =
             | Ok (peerNodeAfterFundingSigned, channelMsg) ->
                 match channelMsg with
                 | :? FundingSignedMsg as fundingSignedMsg ->
-                    let finalizedTxRes, channelAfterFundingSigned =
-                        let channelCmd = ChannelCommand.ApplyFundingSigned fundingSignedMsg
-                        channelAfterFundingCreated.ExecuteCommand channelCmd <| function
-                            | (WeAcceptedFundingSigned(finalizedTx, _)::[]) -> Some finalizedTx
-                            | _ -> None
-                    let connectedChannelAfterFundingSigned = {
-                        connectedChannel with
-                            PeerNode = peerNodeAfterFundingSigned
-                            Channel = channelAfterFundingSigned
-                    }
-                    match finalizedTxRes with
+                    let channelRes =
+                        channelWaitingForFundingSigned.ApplyFundingSigned fundingSignedMsg
+                    match channelRes with
                     | Error err ->
-                        let! connectedChannelAfterError =
-                            connectedChannelAfterFundingSigned.SendError err.Message
+                        let! peerNodeAfterError =
+                            peerNodeAfterFundingSigned.SendError
+                                err.Message
+                                (Some channelWaitingForFundingSigned.ChannelId)
                         return Error <| InvalidFundingSigned
-                            (connectedChannelAfterError.PeerNode, err)
-                    | Ok finalizedTx ->
-                        connectedChannelAfterFundingSigned.SaveToWallet()
+                            (peerNodeAfterError, err)
+                    | Ok (finalizedTx, channel) ->
+                        let connectedChannel = {
+                            PeerNode = peerNodeAfterFundingSigned
+                            Channel = { Channel = channel }
+                            Account = account
+                            MinimumDepth = outgoingUnfundedChannel.MinimumDepth
+                            ChannelIndex = outgoingUnfundedChannel.ChannelIndex
+                        }
+                        connectedChannel.SaveToWallet()
                         let! _txid =
                             let signedTx: string = finalizedTx.Value.ToHex()
                             Account.BroadcastRawTransaction currency signedTx
                         let fundedChannel = {
-                            ConnectedChannel = connectedChannelAfterFundingSigned
+                            ConnectedChannel = connectedChannel
                             TheirFundingLockedMsgOpt = None
                         }
                         return Ok fundedChannel
@@ -174,51 +175,42 @@ type internal FundedChannel =
             match channelMsg with
             | :? OpenChannelMsg as openChannelMsg ->
                 let nodeMasterPrivKey = peerNode.NodeMasterPrivKey ()
-                let! channel =
-                    MonoHopUnidirectionalChannel.Create
-                        nodeId
-                        account
-                        nodeMasterPrivKey
-                        channelIndex
-                        WaitForInitInternal
-                let channelPrivKeys = channel.ChannelPrivKeys
-                let localParams =
-                    let funding = openChannelMsg.FundingSatoshis
+                let! channelWaitingForFundingCreatedRes = async {
                     let defaultFinalScriptPubKey = ScriptManager.CreatePayoutScript account
-                    channel.LocalParams funding defaultFinalScriptPubKey false
-                let res, channelAfterOpenChannel =
-                    let channelCmd =
-                        let inputInitFundee: InputInitFundee = {
-                            TemporaryChannelId = openChannelMsg.TemporaryChannelId
-                            LocalParams = localParams
-                            RemoteInit = peerNodeAfterOpenChannel.InitMsg
-                            ToLocal = LNMoney 0L
-                            ChannelPrivKeys = channelPrivKeys
-                        }
-                        ChannelCommand.CreateInbound inputInitFundee
-                    channel.ExecuteCommand channelCmd <| function
-                        | (NewInboundChannelStarted _)::[] -> Some ()
-                        | _ -> None
-                UnwrapResult res "error executing create inbound channel command"
-
-                let acceptChannelMsgRes, channelAfterAcceptChannel =
-                    let channelCmd = ApplyOpenChannel openChannelMsg
-                    channelAfterOpenChannel.ExecuteCommand channelCmd <| function
-                        | WeAcceptedOpenChannel(acceptChannelMsg, _)::[] -> Some acceptChannelMsg
-                        | _ -> None
-                match acceptChannelMsgRes with
+                    let currency = (account :> IAccount).Currency
+                    let! feeEstimator = FeeEstimator.Create currency
+                    let network = UtxoCoin.Account.GetNetwork currency
+                    let channelPrivKeys = nodeMasterPrivKey.ChannelPrivKeys channelIndex
+                    let localParams =
+                        let funding = openChannelMsg.FundingSatoshis
+                        Settings.GetLocalParams funding
+                    let fundingTxMinimumDepth =
+                        MonoHopUnidirectionalChannel.DefaultFundingTxMinimumDepth
+                    return Channel.NewInbound(
+                        Settings.PeerLimits,
+                        MonoHopUnidirectionalChannel.DefaultChannelOptions (),
+                        nodeMasterPrivKey,
+                        channelIndex,
+                        feeEstimator,
+                        network,
+                        nodeId,
+                        fundingTxMinimumDepth,
+                        Some defaultFinalScriptPubKey,
+                        openChannelMsg,
+                        localParams,
+                        peerNodeAfterOpenChannel.InitMsg,
+                        channelPrivKeys
+                    )
+                }
+                match channelWaitingForFundingCreatedRes with
                 | Error err ->
-                    let connectedChannel = {
-                        PeerNode = peerNodeAfterOpenChannel
-                        Channel = channelAfterAcceptChannel
-                        Account = account
-                        MinimumDepth = BlockHeightOffset32 0u
-                        ChannelIndex = channelIndex
-                    }
-                    let! connectedChannelAfterErrorSent = connectedChannel.SendError err.Message
+                    let! peerNodeAfterErrorSent =
+                        peerNodeAfterOpenChannel.SendError
+                            err.Message
+                            (Some openChannelMsg.TemporaryChannelId)
                     return Error <| InvalidOpenChannel
-                        (connectedChannelAfterErrorSent.PeerNode, err)
-                | Ok acceptChannelMsg ->
+                        (peerNodeAfterErrorSent, err)
+                | Ok (acceptChannelMsg, channelWaitingForFundingCreated) ->
                     let! peerNodeAfterAcceptChannel = peerNodeAfterOpenChannel.SendMsg acceptChannelMsg
                     let! recvChannelMsgRes = peerNodeAfterAcceptChannel.RecvChannelMsg()
                     match recvChannelMsgRes with
@@ -230,26 +222,26 @@ type internal FundedChannel =
                     | Ok (peerNodeAfterFundingCreated, channelMsg) ->
                         match channelMsg with
                         | :? FundingCreatedMsg as fundingCreatedMsg ->
-                            let fundingSignedMsgRes, channelAfterFundingCreated =
-                                let channelCmd = ApplyFundingCreated fundingCreatedMsg
-                                channelAfterAcceptChannel.ExecuteCommand channelCmd <| function
-                                    | WeAcceptedFundingCreated(fundingSignedMsg, _)::[] -> Some fundingSignedMsg
-                                    | _ -> None
-                            let minimumDepth = acceptChannelMsg.MinimumDepth
-                            let connectedChannelAfterFundingCreated = {
-                                PeerNode = peerNodeAfterFundingCreated
-                                Channel = channelAfterFundingCreated
-                                Account = account
-                                MinimumDepth = minimumDepth
-                                ChannelIndex = channelIndex
-                            }
-                            match fundingSignedMsgRes with
+                            let channelRes =
+                                channelWaitingForFundingCreated.ApplyFundingCreated
+                                    fundingCreatedMsg
+                            match channelRes with
                             | Error err ->
-                                let! connectedChannelAfterErrorSent =
-                                    connectedChannelAfterFundingCreated.SendError err.Message
+                                let! peerNodeAfterErrorSent =
+                                    peerNodeAfterFundingCreated.SendError
+                                        err.Message
+                                        (Some openChannelMsg.TemporaryChannelId)
                                 return Error <| InvalidFundingCreated
-                                    (connectedChannelAfterErrorSent.PeerNode, err)
-                            | Ok fundingSignedMsg ->
+                                    (peerNodeAfterErrorSent, err)
+                            | Ok (fundingSignedMsg, channel) ->
+                                let minimumDepth = acceptChannelMsg.MinimumDepth
+                                let connectedChannelAfterFundingCreated = {
+                                    PeerNode = peerNodeAfterFundingCreated
+                                    Channel = { Channel = channel }
+                                    Account = account
+                                    MinimumDepth = minimumDepth
+                                    ChannelIndex = channelIndex
+                                }
                                 connectedChannelAfterFundingCreated.SaveToWallet()
 
                                 let! peerNodeAfterFundingSigned =
@@ -269,10 +261,7 @@ type internal FundedChannel =
 
     member internal self.FundingScriptCoin
         with get(): ScriptCoin =
-            UnwrapOption
-                self.ConnectedChannel.FundingScriptCoin
-                "The FundedChannel type is created by funding a channel and \
-                guarantees that the underlying ChannelState has a script coin"
+            self.ConnectedChannel.FundingScriptCoin
 
     member internal self.GetConfirmations(): Async<BlockHeightOffset32> = async {
         let currency = (self.ConnectedChannel.Account :> IAccount).Currency

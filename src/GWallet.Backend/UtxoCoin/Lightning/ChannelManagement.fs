@@ -66,7 +66,6 @@ type LocallyForceClosedData =
 type ChannelStatus =
     | FundingBroadcastButNotLocked of FundingBroadcastButNotLockedData
     | Closing
-    | Closed
     | LocallyForceClosed of LocallyForceClosedData
     | Active
     | Broken
@@ -88,8 +87,8 @@ type ChannelInfo =
     static member internal FromSerializedChannel (serializedChannel: SerializedChannel)
                                                  (currency: Currency)
                                                      : ChannelInfo = {
-        ChannelId = serializedChannel.ChannelId
-        IsFunder = serializedChannel.IsFunder
+        ChannelId = serializedChannel.ChannelId()
+        IsFunder = serializedChannel.IsFunder()
         Balance = serializedChannel.Balance().ToMoney().ToUnit MoneyUnit.BTC
         SpendableBalance = serializedChannel.SpendableBalance().ToMoney().ToUnit MoneyUnit.BTC
         Capacity = serializedChannel.Capacity().ToUnit MoneyUnit.BTC
@@ -112,11 +111,9 @@ type ChannelInfo =
                 | ChannelState.Negotiating _
                 | ChannelState.Closing _ ->
                     Closing
-                | ChannelState.Closed _ ->
-                    Closed
                 | ChannelState.Normal _ -> ChannelStatus.Active
-                | ChannelState.WaitForFundingConfirmed waitForFundingConfirmedData ->
-                    let txId = TransactionIdentifier.FromHash waitForFundingConfirmedData.Commitments.FundingScriptCoin.Outpoint.Hash
+                | ChannelState.WaitForFundingConfirmed _ ->
+                    let txId = TransactionIdentifier.FromHash serializedChannel.Commitments.FundingScriptCoin.Outpoint.Hash
                     let minimumDepth = serializedChannel.MinSafeDepth.Value
                     let fundingBroadcastButNotLockedData = {
                         Currency = currency
@@ -178,7 +175,7 @@ type ChannelStore(account: NormalUtxoAccount) =
         )
 
     member internal self.SaveChannel (serializedChannel: SerializedChannel) =
-        let fileName = self.ChannelFileName serializedChannel.ChannelId
+        let fileName = self.ChannelFileName (serializedChannel.ChannelId())
         let json =
             Marshalling.SerializeCustom (
                 serializedChannel,
@@ -196,8 +193,7 @@ type ChannelStore(account: NormalUtxoAccount) =
     member self.ListChannelInfos(): seq<ChannelInfo> = seq {
         for channelId in self.ListChannelIds() do
             let channelInfo = self.ChannelInfo channelId
-            if channelInfo.Status <> ChannelStatus.Closing &&
-               channelInfo.Status <> ChannelStatus.Closed then
+            if channelInfo.Status <> ChannelStatus.Closing then
                 yield channelInfo
     }
 
@@ -206,20 +202,12 @@ type ChannelStore(account: NormalUtxoAccount) =
         File.Delete fileName
 
     member self.GetCommitmentTx (channelId: ChannelIdentifier): string =
-        let commitments =
-            let serializedChannel = self.LoadChannel channelId
-            UnwrapOption
-                serializedChannel.ChanState.Commitments
-                "A channel can only end up in the wallet if it has commitments."
-        commitments.LocalCommit.PublishableTxs.CommitTx.Value.ToHex()
+        let serializedChannel = self.LoadChannel channelId
+        serializedChannel.Commitments.LocalCommit.PublishableTxs.CommitTx.Value.ToHex()
 
     member self.GetToSelfDelay (channelId: ChannelIdentifier): uint16 =
-        let commitments =
-            let serializedChannel = self.LoadChannel channelId
-            UnwrapOption
-                serializedChannel.ChanState.Commitments
-                "A channel can only end up in the wallet if it has commitments."
-        commitments.LocalParams.ToSelfDelay.Value
+        let serializedChannel = self.LoadChannel channelId
+        serializedChannel.Commitments.LocalParams.ToSelfDelay.Value
 
     member self.CheckForClosingTx (channelId: ChannelIdentifier): Async<Option<ClosingTx * Option<uint32>>> =
         async {
@@ -316,13 +304,10 @@ type ChannelStore(account: NormalUtxoAccount) =
 
     member self.FeeUpdateRequired (channelId: ChannelIdentifier): Async<Option<decimal>> = async {
         let serializedChannel = self.LoadChannel channelId
-        if not <| serializedChannel.IsFunder then
+        if not <| serializedChannel.IsFunder() then
             return None
         else
-            let commitments =
-                UnwrapOption
-                    serializedChannel.ChanState.Commitments
-                    "A channel can only end up in the wallet if it has commitments."
+            let commitments = serializedChannel.Commitments
             let agreedUponFeeRate =
                 let getFeeRateFromMsg (msg: IUpdateMsg): Option<FeeRatePerKw> =
                     match msg with

@@ -271,7 +271,7 @@ and internal ActiveChannel =
                     confirmationCount
                 )
             channel.ExecuteCommand channelCmd <| function
-                | (FundingConfirmed _)::(WeSentFundingLocked fundingLockedMsg)::[] ->
+                | (FundingConfirmed (fundingLockedMsg, _))::[] ->
                     Some fundingLockedMsg
                 | _ -> None
         let ourFundingLockedMsg = UnwrapResult ourFundingLockedMsgRes "DNL error creating funding_locked msg"
@@ -353,7 +353,16 @@ and internal ActiveChannel =
         | WaitForFundingConfirmed state ->
             let fundedChannel = {
                 FundedChannel.ConnectedChannel = connectedChannel
-                TheirFundingLockedMsgOpt = state.Deferred
+                TheirFundingLockedMsgOpt = 
+                    match state.RemoteNextPerCommitmentPointOpt with 
+                    | None -> None
+                    | Some remoteNextPerCommitmentPoint -> 
+                        let msg : FundingLockedMsg = 
+                            {
+                                ChannelId = channel.ChannelId.DnlChannelId
+                                NextPerCommitmentPoint = remoteNextPerCommitmentPoint
+                            }
+                        Some msg
             }
             return! ActiveChannel.CheckFundingConfirmed fundedChannel
         | WaitForFundingLocked _ ->
@@ -403,17 +412,11 @@ and internal ActiveChannel =
 
     member internal self.Balance
         with get(): LNMoney =
-            UnwrapOption
-                (self.ConnectedChannel.Channel.Balance())
-                "The ActiveChannel type is created by establishing a channel \
-                and so guarantees that the underlying channel state has a balance"
+            self.ConnectedChannel.Channel.Balance()
 
     member internal self.SpendableBalance
         with get(): LNMoney =
-            UnwrapOption
-                (self.ConnectedChannel.Channel.SpendableBalance())
-                "The ActiveChannel type is created by establishing a channel \
-                and so guarantees that the underlying channel state has a balance"
+            self.ConnectedChannel.Channel.SpendableBalance()
 
     member self.ChannelId
         with get(): ChannelIdentifier = self.ConnectedChannel.ChannelId
@@ -426,7 +429,7 @@ and internal ActiveChannel =
         let ourCommitmentSignedMsgRes, channelAfterCommitmentSigned =
             let channelCmd = ChannelCommand.SignCommitment
             channel.ExecuteCommand channelCmd <| function
-                | WeAcceptedOperationSign(msg, _)::[] -> Some msg
+                | WeAcceptedOperationSign(msg, _, _)::[] -> Some msg
                 | _ -> None
         let ourCommitmentSignedMsg = UnwrapResult ourCommitmentSignedMsgRes "error executing sign commit command"
 
@@ -730,8 +733,6 @@ and internal ActiveChannel =
                 | Ok activeChannelAfterCommitReceived -> return Ok activeChannelAfterCommitReceived
     }
 
-    // The Commitments field will always be Some when we have established a channel
     member internal self.Commitments(): Commitments =
-        let commitmentsOpt = self.ConnectedChannel.Channel.Channel.State.Commitments
-        UnwrapOption commitmentsOpt "no commitment available"
+        self.ConnectedChannel.Channel.Channel.Commitments
 
