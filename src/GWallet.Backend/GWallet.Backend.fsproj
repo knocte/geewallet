@@ -124,14 +124,14 @@
     </Reference>
     <Reference Include="System.Numerics" />
     <Reference Include="System.Runtime.CompilerServices.Unsafe">
-      <HintPath>..\..\packages\System.Runtime.CompilerServices.Unsafe.4.5.2\lib\netstandard2.0\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
+      <HintPath>..\..\packages\System.Runtime.CompilerServices.Unsafe.4.5.3\lib\net461\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
     </Reference>
     <Reference Include="System.Xml.Linq" />
     <Reference Include="Common.Logging.Core">
       <HintPath>..\..\packages\Common.Logging.Core.3.4.1\lib\net40\Common.Logging.Core.dll</HintPath>
     </Reference>
     <Reference Include="BouncyCastle.Crypto">
-      <HintPath>..\..\packages\Portable.BouncyCastle.1.8.5.2\lib\net40\BouncyCastle.Crypto.dll</HintPath>
+      <HintPath>..\..\packages\Portable.BouncyCastle.1.8.6.7\lib\net40\BouncyCastle.Crypto.dll</HintPath>
     </Reference>
     <Reference Include="Newtonsoft.Json">
       <HintPath>..\..\packages\Newtonsoft.Json.11.0.2\lib\net45\Newtonsoft.Json.dll</HintPath>
@@ -166,7 +166,7 @@
       <HintPath>..\..\packages\NBitcoin.Altcoins.2.0.5.1\lib\net452\NBitcoin.Altcoins.dll</HintPath>
     </Reference>
     <Reference Include="NBitcoin">
-      <HintPath>..\..\packages\NBitcoin.5.0.13\lib\net461\NBitcoin.dll</HintPath>
+      <HintPath>..\..\packages\NBitcoin.5.0.75\lib\net461\NBitcoin.dll</HintPath>
     </Reference>
     <Reference Include="System.Threading.Tasks.Extensions">
       <HintPath>..\..\packages\System.Threading.Tasks.Extensions.4.5.1\lib\portable-net45+win8+wp8+wpa81\System.Threading.Tasks.Extensions.dll</HintPath>
@@ -281,13 +281,13 @@
       <HintPath>..\..\packages\HtmlAgilityPack.1.11.24\lib\Net45\HtmlAgilityPack.dll</HintPath>
     </Reference>
     <Reference Include="DotNetLightning.Core">
-      <HintPath>..\..\packages\DotNetLightning.Kiss.1.1.2-date20210209-0415-git-1668246\lib\netstandard2.0\DotNetLightning.Core.dll</HintPath>
+      <HintPath>..\..\packages\DotNetLightning.Kiss.1.1.2-date20210412-1027-git-6062c26\lib\netstandard2.0\DotNetLightning.Core.dll</HintPath>
     </Reference>
     <Reference Include="InternalBech32Encoder">
-      <HintPath>..\..\packages\DotNetLightning.Kiss.1.1.2-date20210209-0415-git-1668246\lib\netstandard2.0\InternalBech32Encoder.dll</HintPath>
+      <HintPath>..\..\packages\DotNetLightning.Kiss.1.1.2-date20210412-1027-git-6062c26\lib\netstandard2.0\InternalBech32Encoder.dll</HintPath>
     </Reference>
     <Reference Include="ResultUtils">
-      <HintPath>..\..\packages\DotNetLightning.Kiss.1.1.2-date20210209-0415-git-1668246\lib\netstandard2.0\ResultUtils.dll</HintPath>
+      <HintPath>..\..\packages\DotNetLightning.Kiss.1.1.2-date20210412-1027-git-6062c26\lib\netstandard2.0\ResultUtils.dll</HintPath>
     </Reference>
   </ItemGroup>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

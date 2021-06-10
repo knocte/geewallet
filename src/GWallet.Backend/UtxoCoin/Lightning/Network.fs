@@ -85,14 +85,14 @@ type RecvBytesError =
 
 type internal TransportListener =
     internal {
-        NodeSecret: ExtKey
+        NodeMasterPrivKey: NodeMasterPrivKey
         Listener: TcpListener
     }
     interface IDisposable with
         member self.Dispose() =
             self.Listener.Stop()
 
-    static member internal Bind (nodeSecret: ExtKey) (endpoint: IPEndPoint) =
+    static member internal Bind (nodeMasterPrivKey: NodeMasterPrivKey) (endpoint: IPEndPoint) =
         let listener = new TcpListener (endpoint)
         listener.ExclusiveAddressUse <- false
         listener.Server.SetSocketOption(
@@ -103,19 +103,19 @@ type internal TransportListener =
         listener.Start()
 
         {
-            NodeSecret = nodeSecret
+            NodeMasterPrivKey = nodeMasterPrivKey
             Listener = listener
         }
-
-    member internal self.PubKey: PubKey =
-        self.NodeSecret.PrivateKey.PubKey
 
     member internal self.LocalIPEndPoint: IPEndPoint =
         // sillly .NET API: downcast is even done in the sample from the docs: https://docs.microsoft.com/en-us/dotnet/api/system.net.sockets.tcplistener.localendpoint?view=netcore-3.1
         self.Listener.LocalEndpoint :?> IPEndPoint
 
     member internal self.NodeId: NodeId =
-        self.PubKey |> NodeId
+        self.NodeMasterPrivKey.NodeId()
+
+    member internal self.PubKey: PubKey =
+        self.NodeId.Value
 
     member internal self.EndPoint: NodeEndPoint =
         let nodeId = PublicKey self.PubKey
@@ -124,7 +124,7 @@ type internal TransportListener =
 
 type PeerErrorMessage =
     {
-        ErrorMsg: DotNetLightning.Serialize.Msgs.ErrorMsg
+        ErrorMsg: DotNetLightning.Serialization.Msgs.ErrorMsg
     }
     interface IErrorMsg with
         member self.Message =
@@ -151,7 +151,7 @@ type PeerErrorMessage =
 
 type internal TransportStream =
     internal {
-        NodeSecret: ExtKey
+        NodeMasterPrivKey: NodeMasterPrivKey
         Peer: Peer
         Client: TcpClient
     }
@@ -226,13 +226,14 @@ type internal TransportStream =
     }
 
     static member private ConnectHandshake (client: TcpClient)
-                                           (nodeSecret: ExtKey)
+                                           (nodeMasterPrivKey: NodeMasterPrivKey)
                                            (peerNodeId: NodeId)
                                                : Async<Result<TransportStream, HandshakeError>> = async {
-        let nodeSecretKey = nodeSecret.PrivateKey
+        let nodeSecret = nodeMasterPrivKey.NodeSecret()
         let stream = client.GetStream()
         let peerId = PeerId client.Client.RemoteEndPoint
-        let peer = Peer.CreateOutbound(peerId, peerNodeId, nodeSecretKey)
+        // FIXME: CreateOutbound should take a NodeSecret
+        let peer = Peer.CreateOutbound(peerId, peerNodeId, nodeSecret.RawKey())
         let act1, peerEncryptor = PeerChannelEncryptor.getActOne peer.ChannelEncryptor
         Debug.Assert((TransportStream.bolt08ActOneLength = act1.Length), "act1 has wrong length")
         let peerAfterAct1 = { peer with ChannelEncryptor = peerEncryptor }
@@ -246,7 +247,7 @@ type internal TransportStream =
         match act2Res with
         | Error peerDisconnectedError -> return Error <| DisconnectedOnAct2 peerDisconnectedError
         | Ok act2 ->
-            let peerCmd = ProcessActTwo(act2, nodeSecretKey)
+            let peerCmd = ProcessActTwo(act2, nodeSecret.RawKey())
             match Peer.executeCommand peerAfterAct1 peerCmd with
             | Error err -> return Error <| InvalidAct2 err
             | Ok (ActTwoProcessed ((act3, _), _) as evt::[]) ->
@@ -256,7 +257,7 @@ type internal TransportStream =
 
                 do! stream.WriteAsync(act3, 0, act3.Length) |> Async.AwaitTask
                 return Ok {
-                    NodeSecret = nodeSecret
+                    NodeMasterPrivKey = nodeMasterPrivKey
                     Peer = peerAfterAct2
                     Client = client
                 }
@@ -266,7 +267,7 @@ type internal TransportStream =
     }
 
     static member internal Connect
-        (nodeSecret: ExtKey)
+        (nodeMasterPrivKey: NodeMasterPrivKey)
         (peerNodeId: NodeId)
         (peerId: PeerId)
         : Async<Result<TransportStream, HandshakeError>> = async {
@@ -275,7 +276,7 @@ type internal TransportStream =
         match connectRes with
         | Error err -> return Error <| TcpConnect err
         | Ok client ->
-            return! TransportStream.ConnectHandshake client nodeSecret peerNodeId
+            return! TransportStream.ConnectHandshake client nodeMasterPrivKey peerNodeId
     }
 
     static member internal AcceptFromTransportListener (transportListener: TransportListener)
@@ -284,7 +285,8 @@ type internal TransportStream =
         match clientRes with
         | Error socketError -> return Error <| TcpAccept socketError
         | Ok client ->
-            let nodeSecretKey = transportListener.NodeSecret.PrivateKey
+            let nodeSecret = transportListener.NodeMasterPrivKey.NodeSecret()
+            let nodeSecretKey = nodeSecret.RawKey()
             let stream = client.GetStream()
             let peerId = client.Client.RemoteEndPoint |> PeerId
             let peer = Peer.CreateInbound(peerId, nodeSecretKey)
@@ -310,7 +312,7 @@ type internal TransportStream =
                             let peerAfterAct3 = Peer.applyEvent peerAfterAct2 evt
 
                             return Ok {
-                                NodeSecret = transportListener.NodeSecret
+                                NodeMasterPrivKey = transportListener.NodeMasterPrivKey
                                 Peer = peerAfterAct3
                                 Client = client
                             }
@@ -365,7 +367,7 @@ type internal TransportStream =
         let! res = AsyncExtensions.WhenAny [ connect initialInterval; accept initialInterval ]
         match res with
         | Choice1Of2 client ->
-            return! TransportStream.ConnectHandshake client transportListener.NodeSecret peerNodeId
+            return! TransportStream.ConnectHandshake client transportListener.NodeMasterPrivKey peerNodeId
         | Choice2Of2 transportStream ->
             return Ok transportStream
     }

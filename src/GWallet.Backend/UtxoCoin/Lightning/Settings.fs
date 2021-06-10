@@ -4,7 +4,7 @@ open System
 
 open NBitcoin
 open DotNetLightning.Utils
-open DotNetLightning.Serialize
+open DotNetLightning.Serialization
 open DotNetLightning.Chain
 open DotNetLightning.Channel
 
@@ -30,7 +30,7 @@ module Settings =
     }
 
     let private SupportedFeatures =
-        let featureBits = FeatureBit.Zero
+        let featureBits = FeatureBits.Zero
         featureBits.SetFeature Feature.OptionDataLossProtect FeaturesSupport.Optional true
         featureBits
 
@@ -38,11 +38,11 @@ module Settings =
                                 (defaultFinalScriptPubKey: Script)
                                 (isFunder: bool)
                                 (remoteNodeId: NodeId)
-                                (channelPubKeys: ChannelKeys)
+                                (channelPrivKeys: ChannelPrivKeys)
                                     : LocalParams =
         {
             NodeId = remoteNodeId
-            ChannelPubKeys = channelPubKeys.ToChannelPubKeys()
+            ChannelPubKeys = channelPrivKeys.ToChannelPubKeys()
             DustLimitSatoshis = Money 200UL
             MaxHTLCValueInFlightMSat = LNMoney 10000L
             ChannelReserveSatoshis = funding / 100L

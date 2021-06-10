@@ -180,7 +180,7 @@ type Lnd = {
         let maturityDurationInNumberOfBlocks = BlockHeightOffset32 (uint32 NBitcoin.Consensus.RegTest.CoinbaseMaturity)
 
         let someMinerThrowAwayAddress =
-            let key = Key()
+            use key = new Key()
             key.PubKey.GetScriptAddress Network.RegTest
         bitcoind.GenerateBlocks maturityDurationInNumberOfBlocks someMinerThrowAwayAddress
 

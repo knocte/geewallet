@@ -88,10 +88,10 @@ type PendingChannel internal (outgoingUnfundedChannel: OutgoingUnfundedChannel) 
             with get(): ChannelIdentifier =
                 self.OutgoingUnfundedChannel.ChannelId
 
-type NodeClient internal (channelStore: ChannelStore, nodeSecret: ExtKey) =
+type NodeClient internal (channelStore: ChannelStore, nodeMasterPrivKey: NodeMasterPrivKey) =
     member val ChannelStore = channelStore
-    member val internal NodeSecret = nodeSecret
-    member val internal NodeId = nodeSecret.PrivateKey.PubKey |> NodeId
+    member val internal NodeMasterPrivKey = nodeMasterPrivKey
+    member val internal NodeSecret = nodeMasterPrivKey.NodeSecret()
     member val Account = channelStore.Account
 
     static member internal AccountPrivateKeyToNodeSecret (accountKey: Key) =
@@ -105,7 +105,7 @@ type NodeClient internal (channelStore: ChannelStore, nodeSecret: ExtKey) =
         let peerId = PeerId (nodeEndPoint.IPEndPoint :> EndPoint)
         let nodeId = nodeEndPoint.NodeId.ToString() |> NBitcoin.PubKey |> NodeId
         let! connectRes =
-            PeerNode.Connect self.NodeSecret nodeId peerId
+            PeerNode.Connect nodeMasterPrivKey nodeId peerId
         match connectRes with
         | Error connectError ->
             if connectError.PossibleBug then
@@ -150,7 +150,7 @@ type NodeClient internal (channelStore: ChannelStore, nodeSecret: ExtKey) =
             let lnAmount = int64(btcAmount * decimal DotNetLightning.Utils.LNMoneyUnit.BTC)
             DotNetLightning.Utils.LNMoney lnAmount
         let! activeChannelRes =
-            ActiveChannel.ConnectReestablish self.ChannelStore self.NodeSecret channelId
+            ActiveChannel.ConnectReestablish self.ChannelStore nodeMasterPrivKey channelId
         match activeChannelRes with
         | Error reconnectActiveChannelError ->
             if reconnectActiveChannelError.PossibleBug then
@@ -186,7 +186,7 @@ type NodeClient internal (channelStore: ChannelStore, nodeSecret: ExtKey) =
             let! activeChannelRes =
                 ActiveChannel.ConnectReestablish
                     self.ChannelStore
-                    self.NodeSecret
+                    nodeMasterPrivKey
                     channelId
             match activeChannelRes with
             | Error reconnectActiveChannelError ->
@@ -208,7 +208,7 @@ type NodeServer internal (nodeClient: NodeClient, transportListener: TransportLi
     member val NodeClient = nodeClient
     member val ChannelStore = nodeClient.ChannelStore
     member val internal TransportListener = transportListener
-    member val internal NodeSecret = transportListener.NodeSecret
+    member val internal NodeMasterPrivKey = transportListener.NodeMasterPrivKey
     member val internal NodeId = transportListener.NodeId
     member val EndPoint = transportListener.EndPoint
     member val Account = nodeClient.ChannelStore.Account
@@ -311,15 +311,16 @@ module public Connection =
                            (password: string)
                                : NodeClient =
         let privateKey = Account.GetPrivateKey channelStore.Account password
-        let nodeSecret: ExtKey = NodeClient.AccountPrivateKeyToNodeSecret privateKey
-        new NodeClient (channelStore, nodeSecret)
+        let nodeMasterPrivKey: NodeMasterPrivKey =
+            NodeClient.AccountPrivateKeyToNodeSecret privateKey
+            |> NodeMasterPrivKey
+        new NodeClient (channelStore, nodeMasterPrivKey)
 
     let public StartServer (channelStore: ChannelStore)
                            (password: string)
                            (bindAddress: IPEndPoint)
                                : NodeServer =
         let nodeClient = StartClient channelStore password
-        let nodeSecret = nodeClient.NodeSecret
-        let transportListener = TransportListener.Bind nodeSecret bindAddress
+        let transportListener = TransportListener.Bind nodeClient.NodeMasterPrivKey bindAddress
         new NodeServer (nodeClient, transportListener)
 

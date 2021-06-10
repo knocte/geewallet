@@ -5,6 +5,7 @@ open System
 open NBitcoin
 open DotNetLightning.Channel
 open DotNetLightning.Chain
+open DotNetLightning.Crypto
 open DotNetLightning.Utils
 open ResultUtils.Portability
 
@@ -14,9 +15,9 @@ open GWallet.Backend.FSharpUtil.UwpHacks
 
 type ChannelIdentifier =
     internal {
-        DnlChannelId: DotNetLightning.Utils.Primitives.ChannelId
+        DnlChannelId: DotNetLightning.Utils.ChannelId
     }
-    static member internal FromDnl (dnlChannelId: DotNetLightning.Utils.Primitives.ChannelId): ChannelIdentifier =
+    static member internal FromDnl (dnlChannelId: DotNetLightning.Utils.ChannelId): ChannelIdentifier =
         { DnlChannelId = dnlChannelId }
 
     static member NewRandom(): ChannelIdentifier =
@@ -26,7 +27,7 @@ type ChannelIdentifier =
             random.NextBytes temporaryChannelIdBytes
             temporaryChannelIdBytes
             |> NBitcoin.uint256
-            |> DotNetLightning.Utils.Primitives.ChannelId
+            |> DotNetLightning.Utils.ChannelId
         { DnlChannelId = dnlChannelId }
 
     static member Parse (text: string): Option<ChannelIdentifier> =
@@ -34,7 +35,7 @@ type ChannelIdentifier =
             let dnlChannelId =
                 text
                 |> NBitcoin.uint256
-                |> DotNetLightning.Utils.Primitives.ChannelId
+                |> DotNetLightning.Utils.ChannelId
             Some { DnlChannelId = dnlChannelId }
         with
         | :? FormatException -> None
@@ -45,10 +46,10 @@ type ChannelIdentifier =
 
 type TransactionIdentifier =
     internal {
-        DnlTxId: DotNetLightning.Utils.Primitives.TxId
+        DnlTxId: DotNetLightning.Utils.TxId
     }
     static member internal FromHash (txIdHash: NBitcoin.uint256): TransactionIdentifier =
-        { DnlTxId = DotNetLightning.Utils.Primitives.TxId txIdHash }
+        { DnlTxId = DotNetLightning.Utils.TxId txIdHash }
 
     override self.ToString() =
         self.DnlTxId.Value.ToString()
@@ -59,7 +60,7 @@ type MonoHopUnidirectionalChannel =
     }
     static member internal Create (nodeId: NodeId)
                                   (account: UtxoCoin.NormalUtxoAccount)
-                                  (nodeSecret: ExtKey)
+                                  (nodeMasterPrivKey: NodeMasterPrivKey)
                                   (channelIndex: int)
                                   (fundingTxProvider: ProvideFundingTx)
                                   (initialState: ChannelState)
@@ -80,16 +81,15 @@ type MonoHopUnidirectionalChannel =
                 PeerChannelConfigLimits = Settings.PeerLimits
                 ChannelOptions = channelOptions
             }
-        let keyRepo = DefaultKeyRepository(nodeSecret, channelIndex)
         let currency = (account :> IAccount).Currency
         let! feeEstimator = FeeEstimator.Create currency
         let network = UtxoCoin.Account.GetNetwork currency
         let channel =
             Channel.Create(
                 channelConfig,
-                keyRepo,
+                nodeMasterPrivKey,
+                channelIndex,
                 feeEstimator,
-                nodeSecret.PrivateKey,
                 fundingTxProvider,
                 network,
                 nodeId
@@ -111,15 +111,15 @@ type MonoHopUnidirectionalChannel =
                 Some <| ChannelIdentifier.FromDnl channelId
             | None -> None
 
-    member internal self.ChannelKeys
-        with get(): ChannelKeys =
-            self.Channel.KeysRepository.GetChannelKeys false
+    member internal self.ChannelPrivKeys
+        with get(): ChannelPrivKeys =
+            self.Channel.ChannelPrivKeys
 
     member self.FundingTxId
         with get(): Option<TransactionIdentifier> =
             match self.Channel.State.Commitments with
             | Some commitments ->
-                { DnlTxId = DotNetLightning.Utils.Primitives.TxId commitments.FundingScriptCoin.Outpoint.Hash }
+                { DnlTxId = DotNetLightning.Utils.TxId commitments.FundingScriptCoin.Outpoint.Hash }
                 |> Some
             | None -> None
 
@@ -137,7 +137,7 @@ type MonoHopUnidirectionalChannel =
                                 defaultFinalScriptPubKey
                                 isFunder
                                 self.RemoteNodeId
-                                self.ChannelKeys
+                                self.ChannelPrivKeys
 
     member internal self.ExecuteCommand<'T> (channelCmd: ChannelCommand)
                                             (eventFilter: List<ChannelEvent> -> Option<'T>)

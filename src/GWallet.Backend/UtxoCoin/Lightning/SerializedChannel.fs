@@ -35,7 +35,7 @@ type SerializedCommitments =
         RemoteNextCommitInfo: RemoteNextCommitInfo
         RemoteNextHTLCId: HTLCId
         RemoteParams: RemoteParams
-        RemotePerCommitmentSecrets: ShaChain
+        RemotePerCommitmentSecrets: PerCommitmentSecretStore
     }
 
 type private CommitmentsJsonConverter() =
@@ -132,7 +132,7 @@ type SerializedChannel =
             if self.IsFunder then
                 let feeRate = self.Commitments.LocalCommit.Spec.FeeRatePerKw
                 let weight = COMMITMENT_TX_BASE_WEIGHT
-                LNMoney.FromMoney <| feeRate.ToFee weight
+                LNMoney.FromMoney <| feeRate.CalculateFeeFromWeight weight
             else
                 LNMoney.Zero
         capacity - channelReserve - fee

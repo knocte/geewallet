@@ -3,9 +3,9 @@ namespace GWallet.Backend.UtxoCoin.Lightning
 open System
 
 open NBitcoin
-open DotNetLightning.Serialize.Msgs
 open DotNetLightning.Channel
 open DotNetLightning.Utils
+open DotNetLightning.Serialization.Msgs
 open ResultUtils.Portability
 
 open GWallet.Backend
@@ -285,11 +285,11 @@ and internal ActiveChannel =
     }
 
     static member internal ConnectReestablish (channelStore: ChannelStore)
-                                              (nodeSecret: ExtKey)
+                                              (nodeMasterPrivKey: NodeMasterPrivKey)
                                               (channelId: ChannelIdentifier)
                                                   : Async<Result<ActiveChannel, ReconnectActiveChannelError>> = async {
         let! connectRes =
-            ConnectedChannel.ConnectFromWallet channelStore nodeSecret channelId
+            ConnectedChannel.ConnectFromWallet channelStore nodeMasterPrivKey channelId
         match connectRes with
         | Error reconnectError -> return Error <| Reconnect reconnectError
         | Ok connectedChannel ->

@@ -22,11 +22,12 @@ type WalletInstance private (password: string, channelStore: ChannelStore, nodeS
 
         let password = Path.GetRandomFileName()
         let privateKeyBytes =
-            let privateKey =
-                match privateKeyOpt with
-                | Some privateKey -> privateKey
-                | None -> new Key()
-            privateKey.ToBytes()
+            match privateKeyOpt with
+            | Some privateKey ->
+                privateKey.ToBytes()
+            | None ->
+                use key = new Key()
+                key.ToBytes()
 
         do! Account.CreateAllAccounts privateKeyBytes password
         let btcAccount =

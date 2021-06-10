@@ -4,9 +4,9 @@ open System
 open System.Net
 
 open NBitcoin
-open DotNetLightning.Serialize.Msgs
 open DotNetLightning.Channel
 open DotNetLightning.Utils
+open DotNetLightning.Serialization.Msgs
 open ResultUtils.Portability
 
 open GWallet.Backend
@@ -66,7 +66,7 @@ type internal ConnectedChannel =
             (self.PeerNode :> IDisposable).Dispose()
 
     static member private LoadChannel (channelStore: ChannelStore)
-                                      (nodeSecretKey: ExtKey)
+                                      (nodeMasterPrivKey: NodeMasterPrivKey)
                                       (channelId: ChannelIdentifier)
                                           : Async<SerializedChannel * MonoHopUnidirectionalChannel> = async {
         let serializedChannel = channelStore.LoadChannel channelId
@@ -77,7 +77,7 @@ type internal ConnectedChannel =
             MonoHopUnidirectionalChannel.Create
                 serializedChannel.RemoteNodeId
                 channelStore.Account
-                nodeSecretKey
+                nodeMasterPrivKey
                 serializedChannel.ChannelIndex
                 fundingTxProvider
                 serializedChannel.ChanState
@@ -148,15 +148,15 @@ type internal ConnectedChannel =
     }
 
     static member internal ConnectFromWallet (channelStore: ChannelStore)
-                                             (nodeSecret: ExtKey)
+                                             (nodeMasterPrivKey: NodeMasterPrivKey)
                                              (channelId: ChannelIdentifier)
                                                  : Async<Result<ConnectedChannel, ReconnectError>> = async {
         let! serializedChannel, channel =
-            ConnectedChannel.LoadChannel channelStore nodeSecret channelId
+            ConnectedChannel.LoadChannel channelStore nodeMasterPrivKey channelId
         let! connectRes =
             let nodeId = channel.RemoteNodeId
             let peerId = PeerId (serializedChannel.CounterpartyIP :> EndPoint)
-            PeerNode.Connect nodeSecret nodeId peerId
+            PeerNode.Connect nodeMasterPrivKey nodeId peerId
         match connectRes with
         | Error connectError -> return Error <| Connect connectError
         | Ok peerNode ->
@@ -182,7 +182,7 @@ type internal ConnectedChannel =
                                             (channelId: ChannelIdentifier)
                                                 : Async<Result<ConnectedChannel, ReconnectError>> = async {
         let! serializedChannel, channel =
-            ConnectedChannel.LoadChannel channelStore transportListener.NodeSecret channelId
+            ConnectedChannel.LoadChannel channelStore transportListener.NodeMasterPrivKey channelId
         let! connectRes =
             let nodeId = channel.RemoteNodeId
             let peerId = PeerId (serializedChannel.CounterpartyIP :> EndPoint)
