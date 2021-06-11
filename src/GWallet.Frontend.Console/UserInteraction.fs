@@ -4,7 +4,6 @@ open System
 open System.IO
 open System.Linq
 open System.Globalization
-open System.Net
 
 open GWallet.Backend
 open GWallet.Backend.FSharpUtil
@@ -783,7 +782,7 @@ module UserInteraction =
                 Console.WriteLine "Invalid account for use with lightning"
                 AskBitcoinAccount()
 
-    let rec private Ask<'T> (parser: string -> 'T) (msg: string): Option<'T> =
+    let rec internal Ask<'T> (parser: string -> 'T) (msg: string): Option<'T> =
         Console.Write msg
         Console.Write ": "
         let text = Console.ReadLine().Trim()
@@ -797,74 +796,4 @@ module UserInteraction =
                 Console.WriteLine(sprintf "Invalid input. %s" error.Message)
                 Console.WriteLine("Try again or leave blank to abort.")
                 Ask parser msg
-
-    let AskChannelCounterpartyConnectionDetails currency: Option<Lightning.NodeEndPoint> =
-        let useQRString = AskYesNo "Do you want to supply the channel counterparty connection string as used embedded in QR codes?"
-        if useQRString then
-            Ask (Lightning.NodeEndPoint.Parse currency) "Channel counterparty QR connection string contents"
-        else
-            option {
-                let! ipAddress =
-                    Ask IPAddress.Parse "Channel counterparty IP"
-                let! port =
-                    Ask UInt16.Parse "Channel counterparty port"
-                let! nodeId =
-                    Ask (PubKey.Parse currency) "Channel counterparty public key in hexadecimal notation"
-                let ipEndPoint = IPEndPoint(ipAddress, int port)
-                return Lightning.NodeEndPoint.FromParts nodeId ipEndPoint
-            }
-
-    let AskBindAddress(): IPEndPoint =
-        let defaultIpAddress = "127.0.0.1"
-        let defaultPort = 9735us
-        let ipAddress =
-            let ipAddressOpt =
-                Ask
-                    IPAddress.Parse
-                    (sprintf "IP address to bind to (leave blank for %s)" defaultIpAddress)
-            match ipAddressOpt with
-            | Some ipAddress -> ipAddress
-            | None ->
-                Console.WriteLine(sprintf "using default of %s" defaultIpAddress)
-                IPAddress.Parse defaultIpAddress
-        let port =
-            let portOpt =
-                Ask
-                    UInt16.Parse
-                    (sprintf "Port to bind to (leave blank for %i)" defaultPort)
-            match portOpt with
-            | Some port -> port
-            | None ->
-                Console.WriteLine(sprintf "using default of %i" defaultPort)
-                defaultPort
-        IPEndPoint(ipAddress, int port)
-
-    let rec AskChannelId (channelStore: ChannelStore)
-                         (isFunder: bool)
-                             : Option<ChannelIdentifier> =
-        let channelIds = seq {
-            for channelId in channelStore.ListChannelIds() do
-                let channelInfo = channelStore.ChannelInfo channelId
-                if channelInfo.IsFunder = isFunder then
-                    yield channelId
-        }
-
-        Console.WriteLine "Available channels:"
-        let rec listChannels (index: int) (channelIds: seq<ChannelIdentifier>) =
-            if not <| Seq.isEmpty channelIds then
-                let channelId = Seq.head channelIds
-                Console.WriteLine(sprintf "%i: %s" index (ChannelId.ToString channelId))
-                listChannels (index + 1) (Seq.tail channelIds)
-        listChannels 0 channelIds
-
-        let indexText = Console.ReadLine().Trim()
-        if indexText = String.Empty then
-            None
-        else
-            match Int32.TryParse indexText with
-            | true, index when index < channelIds.Count() ->
-                Some (channelIds.ElementAt index)
-            | _ ->
-                Console.WriteLine "Invalid option"
-                AskChannelId channelStore isFunder
 
