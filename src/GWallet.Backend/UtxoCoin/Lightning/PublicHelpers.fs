@@ -2,6 +2,10 @@
 
 // the only reason this Helpers file exists is because calling these methods directly would cause the frontend to need to
 // reference DotNetLightning or NBitcoin directly, so: TODO: report this bug against the F# compiler
+// (this is the easiest way to reproduce: 1. checkout repo at same commit hash where the commit that adds this comment,
+//  2. add `member val internal Network = UtxoCoin.Account.GetNetwork (account :> IAccount).Currency` to the type
+//  ChannelStore), 3. compile: see failing errors about wanting to link NBitcoin from Frontend.Console, even for an
+// internal element of the API!
 // (related: https://stackoverflow.com/questions/62274013/fs0074-the-type-referenced-through-c-crecord-is-defined-in-an-assembly-that-i)
 
 open System
