@@ -48,7 +48,7 @@ type internal TowerClient =
 
     member internal self.CreateAndSendPunishmentTx
         (perCommitmentSecret: PerCommitmentSecret)
-        (commitments: Commitments)
+        (savedChannelState: SavedChannelState)
         (localChannelPrivKeys: ChannelPrivKeys)
         (network: Network)
         (account: NormalUtxoAccount)
@@ -61,7 +61,7 @@ type internal TowerClient =
                 let! punishmentTx =
                     ForceCloseTransaction.CreatePunishmentTx
                         perCommitmentSecret
-                        commitments
+                        savedChannelState
                         localChannelPrivKeys
                         network
                         account
@@ -70,7 +70,7 @@ type internal TowerClient =
                 let towerRequest =
                     {
                         AddPunishmentTxRequest.TransactionHex = punishmentTx.ToHex()
-                        CommitmentTxHash = commitments.RemoteCommit.TxId.Value.ToString()
+                        CommitmentTxHash = savedChannelState.RemoteCommit.TxId.Value.ToString()
                     }
 
                 do! self.AddPunishmentTx towerRequest

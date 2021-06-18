@@ -71,7 +71,7 @@ type ClosedChannel()=
     static member internal InitiateCloseChannel(connectedChannel: ConnectedChannel): Async<Result<ClosedChannel, CloseChannelError>> =
         async {
             let ourPayoutScriptOpt =
-                connectedChannel.Channel.Channel.LocalShutdownScriptPubKey
+                connectedChannel.Channel.Channel.SavedChannelState.StaticChannelConfig.LocalStaticShutdownScriptPubKey
 
             let ourPayoutScript =
                 match ourPayoutScriptOpt with 
@@ -94,15 +94,14 @@ type ClosedChannel()=
     static member internal AcceptCloseChannel(connectedChannel: ConnectedChannel, shutdownMsg: ShutdownMsg): Async<Result<ClosedChannel, CloseChannelError>> =
         async {
             let ourPayoutScriptOpt =
-                connectedChannel.Channel.Channel.LocalShutdownScriptPubKey
+                connectedChannel.Channel.Channel.SavedChannelState.StaticChannelConfig.LocalStaticShutdownScriptPubKey
 
             let ourPayoutScript =
                 match ourPayoutScriptOpt with 
                 | None -> 
                     ScriptManager.CreatePayoutScript connectedChannel.Account
                 | Some script -> script
-
-            let! handleRemoteShutdownResult = ClosedChannel.HandleRemoteShutdown connectedChannel shutdownMsg ourPayoutScript false
+            let! handleRemoteShutdownResult = ClosedChannel.HandleRemoteShutdown connectedChannel shutdownMsg ourPayoutScript
 
             match handleRemoteShutdownResult with
             | Error e -> return Error <| e
@@ -121,31 +120,31 @@ type ClosedChannel()=
             let channelWrapper = connectedChannel.Channel
             let peerWrapper = connectedChannel.PeerNode
 
-            let channelCommand = ChannelCommand.Close ourPayoutScript
+            let closeChannelAndMsgRes =
+                channelWrapper.Channel.Close ourPayoutScript
 
-            let closeChannelMsgRes, channelWrapperAfterCloseChannel =
-                channelWrapper.ExecuteCommand channelCommand
-                <| function
-                | (AcceptedOperationShutdown (closeChannelMsg) :: []) -> Some closeChannelMsg
-                | _ -> None
-
-            match closeChannelMsgRes with
+            match closeChannelAndMsgRes with
             | Error channelError -> return Error <| (CloseCommandFailed channelError)
-            | Ok closeChannelMsg ->
+            | Ok (channelAfterClose, closeChannelMsg) ->
                 let! peerWrapperAfterCloseChannel = peerWrapper.SendMsg closeChannelMsg
                 Infrastructure.LogDebug "Waiting for response to shutdown message"
 
                 let connectedChannelAfterShutdownMessageSent = 
-                    { connectedChannel with 
-                        Channel = channelWrapperAfterCloseChannel 
-                        PeerNode = peerWrapperAfterCloseChannel }
+                    { 
+                        connectedChannel with 
+                            Channel = 
+                                {
+                                    Channel = channelAfterClose
+                                }
+                            PeerNode = peerWrapperAfterCloseChannel 
+                    }
 
                 let! receiveRemoteShutdownRes = ClosedChannel.ReceiveRemoteShutdown connectedChannelAfterShutdownMessageSent
                 match receiveRemoteShutdownRes with
                 | Error err ->
                     return Error <| err
                 | Ok (connectedChannelAfterShutdownMessageReceived, shutdownMsg) ->
-                    return! (ClosedChannel.HandleRemoteShutdown connectedChannelAfterShutdownMessageReceived shutdownMsg ourPayoutScript true)       
+                    return! (ClosedChannel.HandleRemoteShutdown connectedChannelAfterShutdownMessageReceived shutdownMsg ourPayoutScript)
         }
 
     static member private ReceiveRemoteShutdown connectedChannel: Async<Result<(ConnectedChannel * ShutdownMsg), CloseChannelError>> =
@@ -177,26 +176,21 @@ type ClosedChannel()=
                     return Error <| ExpectedShutdownMsg msg
         }
 
-    static member private HandleRemoteShutdown (connectedChannel: ConnectedChannel) (shutdownMsg: ShutdownMsg) (ourPayoutScript: ShutdownScriptPubKey) (sentOurs: bool): Async<Result<ConnectedChannel, CloseChannelError>> =
+    static member private HandleRemoteShutdown (connectedChannel: ConnectedChannel) (shutdownMsg: ShutdownMsg) (ourPayoutScript: ShutdownScriptPubKey): Async<Result<ConnectedChannel, CloseChannelError>> =
         async {
             Infrastructure.LogDebug "Received remote shutdown message"
 
             let peerWrapperAfterShutdownChannelReceived = connectedChannel.PeerNode
 
-            let remoteShutdownCmd =
-                ChannelCommand.RemoteShutdown (shutdownMsg, ourPayoutScript)
-
-            let shutdownResponseResult, channelWrapperAfterShutdownResponse =
-                connectedChannel.Channel.ExecuteCommand remoteShutdownCmd
-                <| function
-                | (AcceptedShutdownWhenNoPendingHTLCs (msg, nextState)) :: [] -> Some(msg, nextState)
-                | _ -> None
+            let shutdownResponseResult =
+                connectedChannel.Channel.Channel.RemoteShutdown shutdownMsg ourPayoutScript
 
             match shutdownResponseResult with
             | Error err ->
+                Infrastructure.LogDebug (SPrintF1 "Received remote shutdown message err: %s" err.Message)
                 let connectedChannelAfterError =
                     { connectedChannel with
-                          Channel = channelWrapperAfterShutdownResponse }
+                          Channel = connectedChannel.Channel }
 
                 let! connectedChannelAfterErrorSent = connectedChannelAfterError.SendError err.Message
 
@@ -205,35 +199,44 @@ type ClosedChannel()=
 
                 return Error
                        <| RemoteShutdownCommandFailed(brokenChannel, err)
-            | Ok shutdownResponseMsg ->
-                match shutdownResponseMsg with
-                // Depending on if we are the funder or not we have to send the first ClosingSigned
-                | closingSignedOpt, negotiationData ->
-
-                    let mutable peerWrapperAfterShutdownResponse = peerWrapperAfterShutdownChannelReceived
-                    if not sentOurs then
+            | Ok (channelAfterShutdown, shutdownResponseOpt, closingSignedOpt) ->
+                Infrastructure.LogDebug (SPrintF2 "Received remote shutdown message err: %s %s" (shutdownResponseOpt.IsSome.ToString()) (closingSignedOpt.IsSome.ToString()))
+                let! peerWrapperAfterShutdownResponse = async {
+                    match shutdownResponseOpt with
+                    | Some shutdownResponse ->
                         Infrastructure.LogDebug "Responding with our shutdown"
-                        let! p = peerWrapperAfterShutdownChannelReceived.SendMsg negotiationData.LocalShutdown
-                        peerWrapperAfterShutdownResponse <- p
-
-                    match closingSignedOpt with
-                    | Some closingSigned ->
-                        Infrastructure.LogDebug "We are funder, sending initial ClosingSigned"
-                        Infrastructure.LogDebug(SPrintF1 "ClosingSigned: %A" closingSigned)
-                        let! peerWrapperAfterClosingSigned =
-                            peerWrapperAfterShutdownChannelReceived.SendMsg closingSigned
-
-                        return Ok
-                                   { connectedChannel with
-                                         PeerNode = peerWrapperAfterClosingSigned
-                                         Channel = channelWrapperAfterShutdownResponse }
+                        return! peerWrapperAfterShutdownChannelReceived.SendMsg shutdownResponse
                     | None ->
-                        Infrastructure.LogDebug "We are not funder, waiting for initial ClosingSigned from peer"
+                        return peerWrapperAfterShutdownChannelReceived
+                }
+                match closingSignedOpt with
+                | Some closingSigned ->
+                    Infrastructure.LogDebug "We are funder, sending initial ClosingSigned"
+                    Infrastructure.LogDebug(SPrintF1 "ClosingSigned: %A" closingSigned)
+                    let! peerWrapperAfterClosingSigned =
+                        peerWrapperAfterShutdownChannelReceived.SendMsg closingSigned
 
-                        return Ok
-                                   { connectedChannel with
-                                         PeerNode = peerWrapperAfterShutdownResponse
-                                         Channel = channelWrapperAfterShutdownResponse }
+                    return Ok
+                               { 
+                                    connectedChannel with
+                                        PeerNode = peerWrapperAfterClosingSigned
+                                        Channel = 
+                                            {
+                                                Channel = channelAfterShutdown
+                                            }
+                               }
+                | None ->
+                    Infrastructure.LogDebug "We are not funder, waiting for initial ClosingSigned from peer"
+
+                    return Ok
+                               { 
+                                    connectedChannel with
+                                        PeerNode = peerWrapperAfterShutdownResponse
+                                        Channel = 
+                                            {
+                                                Channel = channelAfterShutdown
+                                            }
+                               }
         }
 
     static member private RunClosingSignedExchange (connectedChannel: ConnectedChannel) ourPayoutScript: Async<Result<ConnectedChannel, CloseChannelError>> =
@@ -271,35 +274,32 @@ type ClosedChannel()=
                             Infrastructure.LogDebug "Received closingSigned from peer"
                             Infrastructure.LogDebug(SPrintF1 "ClosingSigned: %A" closingSignedMsg)
 
-                            let closingSignedCmd =
-                                ChannelCommand.ApplyClosingSigned closingSignedMsg
+                            let channelAndClosingSignedRes =
+                                connectedChannelAfterClosingSignedReceived.Channel.Channel.ApplyClosingSigned closingSignedMsg
 
-                            let closingSignedResponseResult, channelWrapperAfterClosingSignedResponse =
-                                connectedChannelAfterClosingSignedReceived.Channel.ExecuteCommand
-                                    closingSignedCmd
-                                <| function
-                                | (WeProposedNewClosingSigned (msg, _)) :: [] -> Some(Some msg, None, None)
-                                | (MutualClosePerformed (finalizedTx, _, nextMessage)) :: [] -> Some(None, Some finalizedTx, nextMessage)
-                                | _ -> None
-
-                            match closingSignedResponseResult with
-                            | Ok closingSignedResponseMsg ->
+                            match channelAndClosingSignedRes with
+                            | Ok (channelAfterApplyClosingSigned, closingSignedResponseMsg) ->
                                 match closingSignedResponseMsg with
-                                | (Some msg, None, None) ->
+                                | NewClosingSigned (msg) ->
                                     Infrastructure.LogDebug "Responding with new closingSigned"
                                     Infrastructure.LogDebug(SPrintF1 "ClosingSigned: %A" msg)
                                     let! peerWrapperAfterClosingSignedResponse =
                                         peerWrapperAfterClosingSignedReceived.SendMsg msg
 
                                     let connectedChannelAfterClosingSignedResponse =
-                                        { connectedChannelAfterClosingSignedReceived with
-                                              PeerNode = peerWrapperAfterClosingSignedResponse
-                                              Channel = channelWrapperAfterClosingSignedResponse }
+                                        { 
+                                            connectedChannelAfterClosingSignedReceived with
+                                                PeerNode = peerWrapperAfterClosingSignedResponse
+                                                Channel = 
+                                                    {
+                                                        Channel = channelAfterApplyClosingSigned
+                                                    }
+                                        }
 
                                     let! result = exchange connectedChannelAfterClosingSignedResponse
 
                                     return result
-                                | (None, Some finalizedTx, maybeNextMessage) ->
+                                | MutualClose (finalizedTx, maybeNextMessage) ->
                                     Infrastructure.LogDebug "Mutual close performed"
                                     Infrastructure.LogDebug(SPrintF1 "FinalizedTX: %A" finalizedTx)
                                     Infrastructure.LogDebug(SPrintF1 "ourPayoutScript: %A" ourPayoutScript)
@@ -323,18 +323,22 @@ type ClosedChannel()=
                                     Infrastructure.LogDebug(SPrintF1 "Got tx: %A" _txid)
 
                                     let connectedChannelAfterMutualClosePerformed =
-                                        { connectedChannelAfterClosingSignedReceived with
-                                              PeerNode = peerWrapperAfterMutualClosePerformed
-                                              Channel = channelWrapperAfterClosingSignedResponse }
+                                        { 
+                                            connectedChannelAfterClosingSignedReceived with
+                                                PeerNode = peerWrapperAfterMutualClosePerformed
+                                                Channel = 
+                                                    {
+                                                        Channel = channelAfterApplyClosingSigned
+                                                    }
+                                        }
 
                                     connectedChannelAfterMutualClosePerformed.SaveToWallet()
 
                                     return Ok connectedChannelAfterMutualClosePerformed
-                                | _ ->
-                                    // This should never happen
-                                    return failwith "Expected to receive either new closingSigned or mutualClosePerformed"
-                            | Error err -> return Error <| ApplyClosingSignedFailed err
-                        | _ -> return Error <| ExpectedClosingSignedMsg channelMsg
+                            | Error err ->
+                                return Error <| ApplyClosingSignedFailed err
+                        | _ ->
+                            return Error <| ExpectedClosingSignedMsg channelMsg
                 }
 
             let! result = exchange connectedChannel

@@ -690,16 +690,6 @@ module LayerTwo =
                                         }
                                     }
                             }
-                    | ChannelStatus.Broken ->
-                        yield
-                            async {
-                                return async {
-                                    return seq {
-                                        yield! UserInteraction.DisplayLightningChannelStatus channelInfo
-                                        yield "        channel is in an abnormal state"
-                                    }
-                                }
-                            }
                     | ChannelStatus.Closing ->
                         yield
                             async {

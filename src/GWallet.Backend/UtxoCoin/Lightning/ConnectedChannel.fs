@@ -88,11 +88,12 @@ type internal ConnectedChannel =
         Infrastructure.LogDebug <| SPrintF1 "loading channel for %s" (channelId.ToString())
         let! channel =
             MonoHopUnidirectionalChannel.Create
-                serializedChannel.RemoteNodeId
                 channelStore.Account
                 nodeMasterPrivKey
                 serializedChannel.ChannelIndex
-                serializedChannel.ChanState
+                serializedChannel.SavedChannelState
+                serializedChannel.RemoteNextCommitInfo
+                serializedChannel.NegotiatingState
                 serializedChannel.Commitments
         return serializedChannel, channel
     }
@@ -101,14 +102,7 @@ type internal ConnectedChannel =
                                       (channel: MonoHopUnidirectionalChannel)
                                           : Async<Result<PeerNode * MonoHopUnidirectionalChannel, ReestablishError>> = async {
         let channelId = channel.ChannelId
-        let ourReestablishMsgRes, channelAfterReestablishSent =
-            let channelCmd = ChannelCommand.CreateChannelReestablish
-            channel.ExecuteCommand channelCmd <| function
-                | WeSentChannelReestablish ourReestablishMsg::[] ->
-                    Some ourReestablishMsg
-                | _ -> None
-        let ourReestablishMsg = UnwrapResult ourReestablishMsgRes "error executing channel reestablish command"
-
+        let ourReestablishMsg = channel.Channel.CreateChannelReestablish()
         Infrastructure.LogDebug <| SPrintF1 "sending reestablish for %s" (channelId.ToString())
         let! peerNodeAfterReestablishSent = peerNode.SendMsg ourReestablishMsg
         Infrastructure.LogDebug <| SPrintF1 "receiving reestablish for %s" (channelId.ToString())
@@ -150,7 +144,7 @@ type internal ConnectedChannel =
             // commitments. Aside from checking the channel ID this is the sort of
             // thing that should be handled by DNL, except DNL doesn't have an
             // ApplyChannelReestablish command.
-            return Ok (peerNodeAfterReestablishReceived, channelAfterReestablishSent)
+            return Ok (peerNodeAfterReestablishReceived, channel)
     }
 
     static member internal ConnectFromWallet (channelStore: ChannelStore)
@@ -171,7 +165,7 @@ type internal ConnectedChannel =
             match reestablishRes with
             | Error reestablishError -> return Error <| Reestablish reestablishError
             | Ok (peerNodeAfterReestablish, channelAfterReestablish) ->
-                let minimumDepth = serializedChannel.MinSafeDepth
+                let minimumDepth = serializedChannel.MinDepth()
                 let channelIndex = serializedChannel.ChannelIndex
                 let connectedChannel = {
                     Account = channelStore.Account
@@ -204,7 +198,7 @@ type internal ConnectedChannel =
             match reestablishRes with
             | Error reestablishError -> return Error <| Reestablish reestablishError
             | Ok (peerNodeAfterReestablish, channelAfterReestablish) ->
-                let minimumDepth = serializedChannel.MinSafeDepth
+                let minimumDepth = serializedChannel.MinDepth()
                 let channelIndex = serializedChannel.ChannelIndex
                 let connectedChannel = {
                     Account = channelStore.Account
@@ -218,15 +212,14 @@ type internal ConnectedChannel =
 
     member self.SaveToWallet() =
         let channelStore = ChannelStore self.Account
-        let serializedChannel = {
+        let serializedChannel : SerializedChannel = {
             ChannelIndex = self.ChannelIndex
-            Network = self.Channel.Network
-            RemoteNodeId = self.PeerNode.RemoteNodeId
-            ChanState = self.Channel.Channel.State
+            RemoteNextCommitInfo = self.Channel.Channel.RemoteNextCommitInfo
+            SavedChannelState = self.Channel.Channel.SavedChannelState
+            NegotiatingState = self.Channel.Channel.NegotiatingState
             Commitments = self.Channel.Channel.Commitments
             AccountFileName = self.Account.AccountFile.Name
             CounterpartyIP = self.PeerNode.PeerId.Value :?> IPEndPoint
-            MinSafeDepth = self.MinimumDepth
             LocalForceCloseSpendingTxOpt = None
             LocalChannelPubKeys = self.Channel.ChannelPrivKeys.ToChannelPubKeys()
         }
@@ -251,7 +244,7 @@ type internal ConnectedChannel =
             self.Channel.FundingScriptCoin
 
     member self.SendError (err: string): Async<ConnectedChannel> = async {
-        let! peerNode = self.PeerNode.SendError err (self.Channel.Channel.Commitments.ChannelId() |> Some)
+        let! peerNode = self.PeerNode.SendError err (self.Channel.Channel.SavedChannelState.StaticChannelConfig.ChannelId() |> Some)
         return {
             self with
                 PeerNode = peerNode

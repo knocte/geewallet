@@ -178,9 +178,8 @@ type internal FundedChannel =
                 let! channelWaitingForFundingCreatedRes = async {
                     let defaultFinalScriptPubKey = ScriptManager.CreatePayoutScript account
                     let currency = (account :> IAccount).Currency
-                    let! feeEstimator = FeeEstimator.Create currency
+                    let! channelOptions = MonoHopUnidirectionalChannel.DefaultChannelOptions (currency)
                     let network = UtxoCoin.Account.GetNetwork currency
-                    let channelPrivKeys = nodeMasterPrivKey.ChannelPrivKeys channelIndex
                     let localParams =
                         let funding = openChannelMsg.FundingSatoshis
                         Settings.GetLocalParams funding
@@ -188,18 +187,17 @@ type internal FundedChannel =
                         MonoHopUnidirectionalChannel.DefaultFundingTxMinimumDepth
                     return Channel.NewInbound(
                         Settings.PeerLimits,
-                        MonoHopUnidirectionalChannel.DefaultChannelOptions (),
+                        channelOptions,
+                        false,
                         nodeMasterPrivKey,
                         channelIndex,
-                        feeEstimator,
                         network,
                         nodeId,
                         fundingTxMinimumDepth,
                         Some defaultFinalScriptPubKey,
                         openChannelMsg,
                         localParams,
-                        peerNodeAfterOpenChannel.InitMsg,
-                        channelPrivKeys
+                        peerNodeAfterOpenChannel.InitMsg
                     )
                 }
                 match channelWaitingForFundingCreatedRes with

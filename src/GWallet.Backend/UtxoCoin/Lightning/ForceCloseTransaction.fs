@@ -12,7 +12,7 @@ open GWallet.Backend.UtxoCoin
 module public ForceCloseTransaction =
 
     let internal CreatePunishmentTx (perCommitmentSecret: PerCommitmentSecret)
-                                    (commitments: Commitments)
+                                    (savedChannelState: SavedChannelState)
                                     (localChannelPrivKeys: ChannelPrivKeys)
                                     (network: Network)
                                     (account: NormalUtxoAccount)
@@ -21,13 +21,9 @@ module public ForceCloseTransaction =
         async {
             let transactionBuilder =
                 ForceCloseFundsRecovery.createPenaltyTx
-                    commitments.IsFunder
-                    commitments.RemoteParams
                     perCommitmentSecret
-                    commitments.RemoteCommit
+                    savedChannelState
                     localChannelPrivKeys
-                    commitments.RemoteChannelPubKeys
-                    network
 
             let targetAddress =
                 let originAddress = (account :> IAccount).PublicAddress
@@ -42,17 +38,17 @@ module public ForceCloseTransaction =
             let reward =
                 let toLocal =
                     (Commitments.RemoteCommitAmount
-                        commitments.IsFunder
-                        commitments.RemoteParams
-                        commitments.RemoteCommit)
+                        savedChannelState.StaticChannelConfig.IsFunder
+                        savedChannelState.StaticChannelConfig.RemoteParams
+                        savedChannelState.RemoteCommit)
                             .ToLocal
                             .ToDecimal(MoneyUnit.Satoshi)
 
                 let toRemote =
                     (Commitments.RemoteCommitAmount
-                        commitments.IsFunder
-                        commitments.RemoteParams
-                        commitments.RemoteCommit)
+                        savedChannelState.StaticChannelConfig.IsFunder
+                        savedChannelState.StaticChannelConfig.RemoteParams
+                        savedChannelState.RemoteCommit)
                             .ToRemote
                             .ToDecimal(MoneyUnit.Satoshi)
 

@@ -21,8 +21,7 @@ module public ChainWatcher =
                                                              : Async<Option<string>> = async {
         let serializedChannel = channelStore.LoadChannel channelId
         let currency = (channelStore.Account :> IAccount).Currency
-        let commitments = serializedChannel.Commitments
-        let fundingScriptCoin = commitments.FundingScriptCoin
+        let fundingScriptCoin = serializedChannel.FundingScriptCoin()
         let fundingDestination: TxDestination = fundingScriptCoin.ScriptPubKey.GetDestination()
         let network = UtxoCoin.Account.GetNetwork currency
         let fundingAddress: BitcoinAddress = fundingDestination.GetAddress network
@@ -55,16 +54,16 @@ module public ChainWatcher =
         
         
                 let obscuredCommitmentNumberOpt =
-                    ForceCloseFundsRecovery.tryGetObscuredCommitmentNumber commitments.FundingScriptCoin.Outpoint spendingTx
+                    ForceCloseFundsRecovery.tryGetObscuredCommitmentNumber fundingScriptCoin.Outpoint spendingTx
         
                 match obscuredCommitmentNumberOpt with
                 | Ok obscuredCommitmentNumber ->
                     let localChannelPubKeys = serializedChannel.LocalChannelPubKeys
-                    let remoteChannelPubKeys = commitments.RemoteChannelPubKeys
+                    let remoteChannelPubKeys = serializedChannel.SavedChannelState.StaticChannelConfig.RemoteChannelPubKeys
         
                     let commitmentNumber =
                         obscuredCommitmentNumber.Unobscure
-                            commitments.IsFunder
+                            serializedChannel.SavedChannelState.StaticChannelConfig.IsFunder
                             localChannelPubKeys.PaymentBasepoint
                             remoteChannelPubKeys.PaymentBasepoint
         

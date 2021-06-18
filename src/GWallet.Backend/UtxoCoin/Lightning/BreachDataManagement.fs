@@ -41,7 +41,7 @@ type ChannelBreachData =
 
     member internal self.InsertRevokedCommitment
                                         (perCommitmentSecret: PerCommitmentSecret)
-                                        (commitments: Commitments)
+                                        (savedChannelState: SavedChannelState)
                                         (localChannelPrivKeys: ChannelPrivKeys)
                                         (network: Network)
                                         (account: NormalUtxoAccount)
@@ -49,7 +49,7 @@ type ChannelBreachData =
 
         let! punishmentTx =
             ForceCloseTransaction.CreatePunishmentTx perCommitmentSecret
-                                                     commitments
+                                                     savedChannelState
                                                      localChannelPrivKeys
                                                      network
                                                      account
@@ -58,7 +58,7 @@ type ChannelBreachData =
         let breachData : CommitmentBreachData =
             {
                 PenaltyTx = punishmentTx.ToHex()
-                CommitmentNumber = commitments.RemoteCommit.Index.Index()
+                CommitmentNumber = savedChannelState.RemoteCommit.Index.Index()
             }
 
         return { self with CommmitmentBreachData = self.CommmitmentBreachData @ [ breachData ] }

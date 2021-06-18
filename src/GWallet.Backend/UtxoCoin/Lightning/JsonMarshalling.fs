@@ -3,6 +3,7 @@ namespace GWallet.Backend.UtxoCoin.Lightning
 open System
 open System.Net
 
+open NBitcoin
 open DotNetLightning.Utils
 open DotNetLightning.Crypto
 open DotNetLightning.Serialization
@@ -13,6 +14,20 @@ open FSharpUtil
 open Newtonsoft.Json
 
 module JsonMarshalling =
+
+    type internal ShutdownScriptPubKeyConverter() =
+        inherit JsonConverter<ShutdownScriptPubKey>()
+
+        override __.ReadJson(reader: JsonReader, _: Type, _: ShutdownScriptPubKey, _: bool, serializer: JsonSerializer) =
+            let serializedScript = serializer.Deserialize<string> reader
+            let script = Script.FromHex serializedScript
+            let shutdownScriptPubKeyRes = ShutdownScriptPubKey.TryFromScript script
+            let shutdownScriptPubKey = UnwrapResult shutdownScriptPubKeyRes "malformed shutdown script in wallet"
+            shutdownScriptPubKey
+
+        override __.WriteJson(writer: JsonWriter, state: ShutdownScriptPubKey, serializer: JsonSerializer) =
+            let script = state.ScriptPubKey().ToHex()
+            serializer.Serialize(writer, script)
 
     type internal CommitmentNumberConverter() =
         inherit JsonConverter<CommitmentNumber>()
@@ -90,6 +105,7 @@ module JsonMarshalling =
 
     let internal SerializerSettings: JsonSerializerSettings =
         let settings = Marshalling.DefaultSettings ()
+        let shutdownScriptPubKeyConverter = ShutdownScriptPubKeyConverter()
         let ipAddressConverter = IPAddressJsonConverter()
         let ipEndPointConverter = IPEndPointJsonConverter()
         let featureBitConverter = FeatureBitJsonConverter()
@@ -97,6 +113,7 @@ module JsonMarshalling =
         let commitmentNumberConverter = CommitmentNumberConverter()
         let perCommitmentSecretStoreConverter = PerCommitmentSecretStoreConverter()
 
+        settings.Converters.Add shutdownScriptPubKeyConverter
         settings.Converters.Add ipAddressConverter
         settings.Converters.Add ipEndPointConverter
         settings.Converters.Add featureBitConverter

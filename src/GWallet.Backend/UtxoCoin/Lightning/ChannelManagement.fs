@@ -68,7 +68,6 @@ type ChannelStatus =
     | Closing
     | LocallyForceClosed of LocallyForceClosedData
     | Active
-    | Broken
 
 type ChannelInfo =
     {
@@ -86,43 +85,42 @@ type ChannelInfo =
     }
     static member internal FromSerializedChannel (serializedChannel: SerializedChannel)
                                                  (currency: Currency)
-                                                     : ChannelInfo = {
-        ChannelId = serializedChannel.ChannelId()
-        IsFunder = serializedChannel.IsFunder()
-        Balance = serializedChannel.Balance().ToMoney().ToUnit MoneyUnit.BTC
-        SpendableBalance = serializedChannel.SpendableBalance().ToMoney().ToUnit MoneyUnit.BTC
-        Capacity = serializedChannel.Capacity().ToUnit MoneyUnit.BTC
-        MaxBalance = serializedChannel.MaxBalance().ToMoney().ToUnit MoneyUnit.BTC
-        MinBalance = serializedChannel.MinBalance().ToMoney().ToUnit MoneyUnit.BTC
-        FundingTxId = TransactionIdentifier.FromHash serializedChannel.Commitments.FundingScriptCoin.Outpoint.Hash
-        FundingOutPointIndex = serializedChannel.Commitments.FundingScriptCoin.Outpoint.N
-        Currency = currency
-        Status =
+                                                     : ChannelInfo =
+        let fundingTxId = TransactionIdentifier.FromHash (serializedChannel.FundingScriptCoin().Outpoint.Hash)
+        let status =
             match serializedChannel.LocalForceCloseSpendingTxOpt with
             | Some localForceCloseSpendingTx ->
                 ChannelStatus.LocallyForceClosed {
-                    Network = serializedChannel.Network
+                    Network = serializedChannel.SavedChannelState.StaticChannelConfig.Network
                     Currency = currency
-                    ToSelfDelay = serializedChannel.Commitments.LocalParams.ToSelfDelay.Value
+                    ToSelfDelay = serializedChannel.SavedChannelState.StaticChannelConfig.LocalParams.ToSelfDelay.Value
                     SpendingTransactionString = localForceCloseSpendingTx
                 }
             | None ->
-                match serializedChannel.ChanState with
-                | ChannelState.Negotiating _
-                | ChannelState.Closing _ ->
-                    Closing
-                | ChannelState.Normal _ -> ChannelStatus.Active
-                | ChannelState.WaitForFundingConfirmed _ ->
-                    let txId = TransactionIdentifier.FromHash serializedChannel.Commitments.FundingScriptCoin.Outpoint.Hash
-                    let minimumDepth = serializedChannel.MinSafeDepth.Value
-                    let fundingBroadcastButNotLockedData = {
-                        Currency = currency
-                        TxId = txId
-                        MinimumDepth = minimumDepth
-                    }
-                    ChannelStatus.FundingBroadcastButNotLocked fundingBroadcastButNotLockedData
-                | _ -> ChannelStatus.Broken
-    }
+                if serializedChannel.NegotiatingState.HasEnteredShutdown() then
+                    ChannelStatus.Closing
+                elif serializedChannel.SavedChannelState.ShortChannelId.IsNone || serializedChannel.RemoteNextCommitInfo.IsNone then
+                    ChannelStatus.FundingBroadcastButNotLocked
+                        {
+                            Currency = currency
+                            TxId = fundingTxId
+                            MinimumDepth = serializedChannel.MinDepth().Value
+                        }
+                else
+                    ChannelStatus.Active
+        {
+            ChannelId = serializedChannel.ChannelId()
+            IsFunder = serializedChannel.IsFunder()
+            Balance = serializedChannel.Balance().ToMoney().ToUnit MoneyUnit.BTC
+            SpendableBalance = serializedChannel.SpendableBalance().ToMoney().ToUnit MoneyUnit.BTC
+            Capacity = serializedChannel.Capacity().ToUnit MoneyUnit.BTC
+            MaxBalance = serializedChannel.MaxBalance().ToMoney().ToUnit MoneyUnit.BTC
+            MinBalance = serializedChannel.MinBalance().ToMoney().ToUnit MoneyUnit.BTC
+            FundingTxId = fundingTxId
+            FundingOutPointIndex = serializedChannel.FundingScriptCoin().Outpoint.N
+            Currency = currency
+            Status = status
+        }
 
 type ChannelStore(account: NormalUtxoAccount) =
     static member ChannelFilePrefix = "chan-"
@@ -203,22 +201,21 @@ type ChannelStore(account: NormalUtxoAccount) =
 
     member self.GetCommitmentTx (channelId: ChannelIdentifier): string =
         let serializedChannel = self.LoadChannel channelId
-        serializedChannel.Commitments.LocalCommit.PublishableTxs.CommitTx.Value.ToHex()
+        serializedChannel.SavedChannelState.LocalCommit.PublishableTxs.CommitTx.Value.ToHex()
 
     member self.GetToSelfDelay (channelId: ChannelIdentifier): uint16 =
         let serializedChannel = self.LoadChannel channelId
-        serializedChannel.Commitments.LocalParams.ToSelfDelay.Value
+        serializedChannel.SavedChannelState.StaticChannelConfig.LocalParams.ToSelfDelay.Value
 
     member self.CheckForClosingTx (channelId: ChannelIdentifier): Async<Option<ClosingTx * Option<uint32>>> =
         async {
             let serializedChannel = self.LoadChannel channelId
-            let commitments = serializedChannel.Commitments
             let currency = self.Currency
             let network = UtxoCoin.Account.GetNetwork currency
             let fundingAddressString: string =
                 let fundingAddress: BitcoinAddress =
                     let fundingDestination: TxDestination =
-                        commitments.FundingScriptCoin.ScriptPubKey.GetDestination()
+                        serializedChannel.FundingScriptCoin().ScriptPubKey.GetDestination()
                     fundingDestination.GetAddress network
                 fundingAddress.ToString()
             let scriptHash = Account.GetElectrumScriptHashFromPublicAddress currency fundingAddressString
@@ -235,7 +232,7 @@ type ChannelStore(account: NormalUtxoAccount) =
                         return transactions
                     else
                         let txHash = historyList.Head.TxHash
-                        let fundingTxHash = serializedChannel.Commitments.FundingScriptCoin.Outpoint.Hash
+                        let fundingTxHash = serializedChannel.FundingScriptCoin().Outpoint.Hash
 
                         let txHeightOpt =
                             let reportedHeight = historyList.Head.Height
@@ -284,7 +281,7 @@ type ChannelStore(account: NormalUtxoAccount) =
 
                 let obscuredCommitmentNumberOpt =
                     ForceCloseFundsRecovery.tryGetObscuredCommitmentNumber
-                        commitments.FundingScriptCoin.Outpoint
+                        (serializedChannel.FundingScriptCoin().Outpoint)
                         spendingTx
 
                 match obscuredCommitmentNumberOpt with
@@ -308,6 +305,7 @@ type ChannelStore(account: NormalUtxoAccount) =
             return None
         else
             let commitments = serializedChannel.Commitments
+            let savedChannelState = serializedChannel.SavedChannelState
             let agreedUponFeeRate =
                 let getFeeRateFromMsg (msg: IUpdateMsg): Option<FeeRatePerKw> =
                     match msg with
@@ -315,20 +313,20 @@ type ChannelStore(account: NormalUtxoAccount) =
                         Some updateFeeMsg.FeeRatePerKw
                     | _ -> None
                 let feeRateOpt =
-                    commitments.LocalChanges.Proposed
+                    commitments.ProposedLocalChanges
                     |> List.rev
                     |> List.tryPick getFeeRateFromMsg
                 match feeRateOpt with
                 | Some feeRate -> feeRate
                 | None ->
                     let feeRateOpt =
-                        commitments.LocalChanges.Signed
+                        savedChannelState.LocalChanges.Signed
                         |> List.rev
                         |> List.tryPick getFeeRateFromMsg
                     match feeRateOpt with
                     | Some feeRate -> feeRate
                     | None ->
-                        commitments.LocalCommit.Spec.FeeRatePerKw
+                        savedChannelState.LocalCommit.Spec.FeeRatePerKw
             let! actualFeeRate = async {
                 let currency = (self.Account :> IAccount).Currency
                 let! feeEstimator = FeeEstimator.Create currency

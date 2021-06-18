@@ -413,23 +413,28 @@ type NodeServer internal (channelStore: ChannelStore, transportListener: Transpo
         | Ok activeChannel ->
             let connectedChannel = activeChannel.ConnectedChannel
             Infrastructure.LogDebug "Waiting for lightning message"
-            let! recvChannelMsgRes = connectedChannel.PeerNode.RecvChannelMsg()
-            match recvChannelMsgRes with
-            | Error err ->
-                return failwith <| SPrintF1 "Received error while waiting for lightning message: %s" (err :> IErrorMsg).Message
-            | Ok (peerNodeAfterMsgReceived, channelMsg) ->
-                match channelMsg with
-                | :? DotNetLightning.Serialization.Msgs.MonoHopUnidirectionalPaymentMsg as monoHopUnidirectionalPaymentMsg ->
-                    let activeChannelAfterMsgReceived =
-                        { activeChannel with
-                            ConnectedChannel =
-                                { activeChannel.ConnectedChannel
-                                    with PeerNode = peerNodeAfterMsgReceived }}
+            let rec recv (peerNode: PeerNode) =
+                async {
+                    let! recvChannelMsgRes = peerNode.RecvChannelMsg()
+                    match recvChannelMsgRes with
+                    | Error err ->
+                        return failwith <| SPrintF1 "Received error while waiting for lightning message: %s" (err :> IErrorMsg).Message
+                    | Ok (peerNodeAfterMsgReceived, channelMsg) ->
+                        match channelMsg with
+                        | :? DotNetLightning.Serialization.Msgs.MonoHopUnidirectionalPaymentMsg as monoHopUnidirectionalPaymentMsg ->
+                            let activeChannelAfterMsgReceived =
+                                { activeChannel with
+                                    ConnectedChannel =
+                                        { activeChannel.ConnectedChannel
+                                            with PeerNode = peerNodeAfterMsgReceived }}
 
-                    return! self.HandleMonoHopUnidirectionalPaymentMsg activeChannelAfterMsgReceived channelId monoHopUnidirectionalPaymentMsg
-
-                | msg ->
-                    return failwith <| SPrintF1 "Unexpected msg while waiting for monohop payment message: %As" msg
+                            return! self.HandleMonoHopUnidirectionalPaymentMsg activeChannelAfterMsgReceived channelId monoHopUnidirectionalPaymentMsg
+                        | :? FundingLockedMsg ->
+                            return! recv(peerNodeAfterMsgReceived)
+                        | msg ->
+                            return failwith <| SPrintF1 "Unexpected msg while waiting for monohop payment message: %As" msg
+                }
+            return! recv(connectedChannel.PeerNode)
     }
 
     member private self.HandleMonoHopUnidirectionalPaymentMsg (activeChannel: ActiveChannel)
@@ -473,25 +478,30 @@ type NodeServer internal (channelStore: ChannelStore, transportListener: Transpo
             let connectedChannel = activeChannel.ConnectedChannel
 
             Infrastructure.LogDebug "Waiting for lightning message"
-            let! recvChannelMsgRes = connectedChannel.PeerNode.RecvChannelMsg()
-            match recvChannelMsgRes with
-            | Error err ->
-                return failwith <| SPrintF1 "Received error while waiting for lightning message: %s" (err :> IErrorMsg).Message
-            | Ok (peerNodeAfterMsgReceived, channelMsg) ->
-                match channelMsg with
-                | :? DotNetLightning.Serialization.Msgs.ShutdownMsg as shutdownMsg ->
-                    let activeChannelAfterMsgReceived =
-                        { activeChannel with
-                            ConnectedChannel =
-                                { activeChannel.ConnectedChannel with
-                                    PeerNode = peerNodeAfterMsgReceived
+            let rec recv (peerNode: PeerNode) =
+                async {
+                    let! recvChannelMsgRes = peerNode.RecvChannelMsg()
+                    match recvChannelMsgRes with
+                    | Error err ->
+                        return failwith <| SPrintF1 "Received error while waiting for lightning message: %s" (err :> IErrorMsg).Message
+                    | Ok (peerNodeAfterMsgReceived, channelMsg) ->
+                        match channelMsg with
+                        | :? DotNetLightning.Serialization.Msgs.ShutdownMsg as shutdownMsg ->
+                            let activeChannelAfterMsgReceived =
+                                { activeChannel with
+                                    ConnectedChannel =
+                                        { activeChannel.ConnectedChannel with
+                                            PeerNode = peerNodeAfterMsgReceived
+                                        }
                                 }
-                        }
 
-                    return! self.HandleShutdownMsg activeChannelAfterMsgReceived shutdownMsg
-
-                | msg ->
-                    return failwith <| SPrintF1 "Unexpected msg while waiting for shutdown message: %As" msg
+                            return! self.HandleShutdownMsg activeChannelAfterMsgReceived shutdownMsg
+                        | :? FundingLockedMsg ->
+                            return! recv (peerNodeAfterMsgReceived)
+                        | msg ->
+                            return failwith <| SPrintF1 "Unexpected msg while waiting for shutdown message: %As" msg
+                }
+            return! recv (connectedChannel.PeerNode)
     }
 
     member private self.HandleShutdownMsg (activeChannel: ActiveChannel)
@@ -641,8 +651,6 @@ type Node =
                         UtxoCoin.Account.GetNetwork currency
                     let commitmentTx =
                         Transaction.Parse(commitmentTxString, network)
-                    let commitments =
-                        serializedChannel.Commitments
                     let channelPrivKeys =
                         let channelIndex = serializedChannel.ChannelIndex
                         nodeMasterPrivKey.ChannelPrivKeys channelIndex
@@ -655,12 +663,8 @@ type Node =
                     }
                     let transactionBuilderResult =
                         ForceCloseFundsRecovery.tryGetFundsFromLocalCommitmentTx
-                            commitments.IsFunder
-                            commitments.LocalParams
-                            commitments.FundingScriptCoin
                             channelPrivKeys
-                            commitments.RemoteChannelPubKeys
-                            network
+                            serializedChannel.SavedChannelState.StaticChannelConfig
                             commitmentTx
                     match transactionBuilderResult with
                     | Error (LocalCommitmentTxRecoveryError.InvalidCommitmentTx invalidCommitmentTxError) ->
@@ -675,7 +679,7 @@ type Node =
                                     transactionBuilder
                                     feeRate
                                     commitmentTx
-                                    commitments.FundingScriptCoin
+                                    (serializedChannel.FundingScriptCoin())
                             else
                                 transactionBuilder.EstimateFees (feeRate.AsNBitcoinFeeRate())
                         transactionBuilder.SendFees fee |> ignore
@@ -717,7 +721,6 @@ type Node =
                 | Client nodeClient -> nodeClient.NodeMasterPrivKey
                 | Server nodeServer -> nodeServer.NodeMasterPrivKey
             let serializedChannel = self.ChannelStore.LoadChannel channelId
-            let commitments = serializedChannel.Commitments
             let currency = self.Account.Currency
             let network = UtxoCoin.Account.GetNetwork currency
             let channelPrivKeys =
@@ -732,13 +735,8 @@ type Node =
             }
             let transactionBuilderResult =
                 ForceCloseFundsRecovery.tryGetFundsFromRemoteCommitmentTx
-                    commitments.IsFunder
-                    commitments.FundingScriptCoin
-                    commitments.RemotePerCommitmentSecrets
-                    commitments.RemoteCommit
                     channelPrivKeys
-                    commitments.RemoteChannelPubKeys
-                    network
+                    serializedChannel.SavedChannelState
                     closingTx.Tx.NbTx
 
             match transactionBuilderResult with
@@ -756,7 +754,7 @@ type Node =
                             transactionBuilder
                             feeRate
                             closingTx.Tx.NbTx
-                            commitments.FundingScriptCoin
+                            (serializedChannel.FundingScriptCoin())
                     else
                         transactionBuilder.EstimateFees (feeRate.AsNBitcoinFeeRate())
                 transactionBuilder.SendFees fee |> ignore

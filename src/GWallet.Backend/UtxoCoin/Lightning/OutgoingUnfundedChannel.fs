@@ -65,8 +65,8 @@ type internal OutgoingUnfundedChannel =
         let channelIndex =
             let random = Org.BouncyCastle.Security.SecureRandom() :> Random
             random.Next(1, Int32.MaxValue / 2)
-        let channelPrivKeys = nodeMasterPrivKey.ChannelPrivKeys channelIndex
         let currency = (account :> IAccount).Currency
+        let! channelOptions = MonoHopUnidirectionalChannel.DefaultChannelOptions (currency)
         let! feeEstimator = FeeEstimator.Create currency
         let network = UtxoCoin.Account.GetNetwork currency
         let defaultFinalScriptPubKey = ScriptManager.CreatePayoutScript account
@@ -79,10 +79,10 @@ type internal OutgoingUnfundedChannel =
         let channelWaitingForAcceptChannelRes =
             Channel.NewOutbound(
                 Settings.PeerLimits,
-                MonoHopUnidirectionalChannel.DefaultChannelOptions (),
+                channelOptions,
+                false,
                 nodeMasterPrivKey,
                 channelIndex,
-                feeEstimator,
                 network,
                 nodeId,
                 Some defaultFinalScriptPubKey,
@@ -91,9 +91,7 @@ type internal OutgoingUnfundedChannel =
                 LNMoney 0L,
                 feeRate,
                 localParams,
-                peerNode.InitMsg,
-                0uy,
-                channelPrivKeys
+                peerNode.InitMsg
             )
         match channelWaitingForAcceptChannelRes with
         | Error channelError ->
