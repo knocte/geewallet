@@ -3,6 +3,7 @@
 open System
 open System.IO
 open System.Text
+open System.Threading
 open System.Threading.Tasks
 
 open BTCPayServer.Lightning
@@ -108,14 +109,20 @@ type Lnd = {
         return ()
     }
 
-    member self.Balance(): Async<Money> = async {
+    member self.OnChainBalance(): Async<Money> = async {
         let client = self.Client()
         let! balance = Async.AwaitTask (client.SwaggerClient.WalletBalanceAsync ())
         return Money(uint64 balance.Confirmed_balance, MoneyUnit.Satoshi)
     }
 
+    member self.ChannelBalance(): Async<Money> = async {
+        let client = self.Client()
+        let! balance = Async.AwaitTask (client.SwaggerClient.ChannelBalanceAsync())
+        return Money(uint64 balance.Balance, MoneyUnit.Satoshi)
+    }
+
     member self.WaitForBalance(money: Money): Async<unit> = async {
-        let! currentBalance = self.Balance()
+        let! currentBalance = self.OnChainBalance()
         if money > currentBalance then
             self.ProcessWrapper.WaitForMessage <| fun msg ->
                 msg.Contains "[walletbalance]"
@@ -134,6 +141,31 @@ type Lnd = {
         let! sendCoinsResp = Async.AwaitTask (client.SwaggerClient.SendCoinsAsync sendCoinsReq)
         return TxId <| uint256 sendCoinsResp.Txid
     }
+
+    member self.CreateInvoice (transferAmount: TransferAmount)
+        : Async<Option<LightningInvoice>> =
+        async {
+            let amount =
+                let btcAmount = transferAmount.ValueToSend
+                let lnAmount = int64(btcAmount * decimal DotNetLightning.Utils.LNMoneyUnit.BTC)
+                DotNetLightning.Utils.LNMoney lnAmount
+            let client = self.Client()
+            try
+                let! _response =
+                    Async.AwaitTask
+                    <| client.CreateInvoice((LightMoney.MilliSatoshis amount.MilliSatoshi), "Test", TimeSpan.FromHours(float(1)), CancellationToken.None)
+                return Some _response
+            with
+            | ex ->
+                // BTCPayServer.Lightning is broken and doesn't handle the
+                // channel-closed reply from lnd properly. This catches the exception (and
+                // hopefully not other, unrelated exceptions).
+                // See: https://github.com/btcpayserver/BTCPayServer.Lightning/issues/38
+                match FSharpUtil.FindException<Newtonsoft.Json.JsonReaderException> ex with
+                | None -> return raise <| FSharpUtil.ReRaise ex
+                | Some _ -> return None
+        }
+
 
     member self.ConnectTo (nodeEndPoint: NodeEndPoint): Async<unit> =
         let client = self.Client()

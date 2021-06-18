@@ -8,6 +8,7 @@ open System.Threading
 
 open NUnit.Framework
 open NBitcoin
+open DotNetLightning.Payment
 open DotNetLightning.Utils
 open ResultUtils.Portability
 
@@ -16,6 +17,7 @@ open GWallet.Backend.UtxoCoin
 open GWallet.Backend.UtxoCoin.Lightning
 open GWallet.Backend.FSharpUtil
 open GWallet.Backend.FSharpUtil.UwpHacks
+
 
 [<TestFixture>]
 type LN() =
@@ -166,16 +168,27 @@ type LN() =
             match channelInfoBeforeAnyPayment.Status with
             | ChannelStatus.Active -> ()
             | status -> failwith (SPrintF1 "unexpected channel status. Expected Active, got %A" status)
-            let! lndBalanceBeforeAnyPayment = lnd.Balance()
 
             let! sendHtlcPayment1Res =
-                let transferAmount =
-                    let accountBalance = Money(channelInfoBeforeAnyPayment.SpendableBalance, MoneyUnit.BTC)
-                    TransferAmount (walletToWalletTestPayment1Amount.ToDecimal MoneyUnit.BTC, accountBalance.ToDecimal MoneyUnit.BTC, Currency.BTC)
-                Lightning.Network.SendHtlcPayment
-                    clientWallet.NodeClient
-                    channelId
-                    transferAmount
+                async {
+                    let transferAmount =
+                        let accountBalance = Money(channelInfoBeforeAnyPayment.SpendableBalance, MoneyUnit.BTC)
+                        TransferAmount (walletToWalletTestPayment1Amount.ToDecimal MoneyUnit.BTC, accountBalance.ToDecimal MoneyUnit.BTC, Currency.BTC)
+                    let! invoiceOpt = 
+                        lnd.CreateInvoice(transferAmount)
+                    let invoice = UnwrapOption invoiceOpt "Failed to create first invoice"
+                    let paymentRequest =
+                        UnwrapResult (PaymentRequest.Parse invoice.BOLT11) "failed to parse payment request 1"
+
+                    return! 
+                        Lightning.Network.SendHtlcPayment
+                            clientWallet.NodeClient
+                            channelId
+                            transferAmount
+                            paymentRequest.PaymentHash.Value
+                            paymentRequest.PaymentSecret
+                            (NBitcoin.DataEncoders.HexEncoder().DecodeData(invoice.Id))
+                }
             UnwrapResult sendHtlcPayment1Res "SendHtlcPayment failed"
 
             let channelInfoAfterPayment1 = clientWallet.ChannelStore.ChannelInfo channelId
@@ -183,31 +196,40 @@ type LN() =
             | ChannelStatus.Active -> ()
             | status -> failwith (SPrintF1 "unexpected channel status. Expected Active, got %A" status)
 
-            let! lndBalanceAfterPayment1 = lnd.Balance()
+            let! lndBalanceAfterPayment1 = lnd.ChannelBalance()
 
             if Money(channelInfoAfterPayment1.Balance, MoneyUnit.BTC) <> fundingAmount - walletToWalletTestPayment1Amount then
                 failwith "incorrect balance after payment 1"
-            if lndBalanceAfterPayment1 <> lndBalanceBeforeAnyPayment + walletToWalletTestPayment1Amount then
+            if lndBalanceAfterPayment1 <> walletToWalletTestPayment1Amount then
                 failwith "incorrect lnd balance after payment 1"
 
             let! sendHtlcPayment2Res =
-                let transferAmount =
-                    let accountBalance = Money(channelInfoAfterPayment1.SpendableBalance, MoneyUnit.BTC)
-                    TransferAmount (
-                        walletToWalletTestPayment2Amount.ToDecimal MoneyUnit.BTC,
-                        accountBalance.ToDecimal MoneyUnit.BTC, Currency.BTC
-                    )
-                Lightning.Network.SendHtlcPayment
-                    clientWallet.NodeClient
-                    channelId
-                    transferAmount
+                async {
+                    let transferAmount =
+                        let accountBalance = Money(channelInfoBeforeAnyPayment.SpendableBalance, MoneyUnit.BTC)
+                        TransferAmount (walletToWalletTestPayment2Amount.ToDecimal MoneyUnit.BTC, accountBalance.ToDecimal MoneyUnit.BTC, Currency.BTC)
+                    let! invoiceOpt = 
+                        lnd.CreateInvoice(transferAmount)
+                    let invoice = UnwrapOption invoiceOpt "Failed to create second invoice"
+                    let paymentRequest =
+                        UnwrapResult (PaymentRequest.Parse invoice.BOLT11) "failed to parse payment request 2"
+
+                    return! 
+                        Lightning.Network.SendHtlcPayment
+                            clientWallet.NodeClient
+                            channelId
+                            transferAmount
+                            paymentRequest.PaymentHash.Value
+                            paymentRequest.PaymentSecret
+                            (NBitcoin.DataEncoders.HexEncoder().DecodeData(invoice.Id))
+                }
             UnwrapResult sendHtlcPayment2Res "SendHtlcPayment failed"
 
             let channelInfoAfterPayment2 = clientWallet.ChannelStore.ChannelInfo channelId
             match channelInfoAfterPayment2.Status with
             | ChannelStatus.Active -> ()
             | status -> failwith (SPrintF1 "unexpected channel status. Expected Active, got %A" status)
-            let! lndBalanceAfterPayment2 = lnd.Balance()
+            let! lndBalanceAfterPayment2 = lnd.ChannelBalance()
 
             if Money(channelInfoAfterPayment2.Balance, MoneyUnit.BTC) <> fundingAmount - walletToWalletTestPayment1Amount - walletToWalletTestPayment2Amount then
                 failwith "incorrect balance after payment 2"

@@ -273,6 +273,9 @@ type NodeClient internal (channelStore: ChannelStore, nodeMasterPrivKey: NodeMas
 
     member internal self.SendHtlcPayment (_channelId: ChannelIdentifier)
                                          (_transferAmount: TransferAmount)
+                                         (_paymentPreImage: uint256)
+                                         (_paymentSecret: option<uint256>)
+                                         (_associatedData: byte[])
                                              : Async<Result<unit, IErrorMsg>> = async {
         return failwith "unimplemented"
     }
