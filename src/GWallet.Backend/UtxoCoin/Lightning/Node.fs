@@ -276,6 +276,7 @@ type NodeClient internal (channelStore: ChannelStore, nodeMasterPrivKey: NodeMas
                                          (paymentPreImage: uint256)
                                          (paymentSecret: option<uint256>)
                                          (associatedData: byte[])
+                                         (outgoingCLTV: BlockHeightOffset32)
                                              : Async<Result<unit, IErrorMsg>> = async {
         let amount =
             let btcAmount = transferAmount.ValueToSend
@@ -296,7 +297,7 @@ type NodeClient internal (channelStore: ChannelStore, nodeMasterPrivKey: NodeMas
                 |> ignore<bool>
             return Error <| (NodeSendMonoHopPaymentError.Reconnect reconnectActiveChannelError :> IErrorMsg)
         | Ok activeChannel ->
-            let! paymentRes = activeChannel.SendHtlcPayment amount paymentPreImage paymentSecret associatedData Settings.HtlcOutgoingCLTV
+            let! paymentRes = activeChannel.SendHtlcPayment amount paymentPreImage paymentSecret associatedData outgoingCLTV
             match paymentRes with
             | Error _sendHtlcPaymentError ->
                 return failwith "not implemented"

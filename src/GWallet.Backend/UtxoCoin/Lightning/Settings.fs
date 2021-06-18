@@ -14,8 +14,6 @@ module Settings =
 
     let Currencies = [| Currency.BTC; Currency.LTC |] :> seq<Currency>
 
-    let HtlcOutgoingCLTV = 1000u
-
     let internal ConfigDirName = "LN"
 
     let internal PeerLimits: ChannelHandshakeLimits = {

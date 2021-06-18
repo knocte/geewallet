@@ -660,26 +660,37 @@ and internal ActiveChannel =
                                          (paymentPreimage: uint256)
                                          (paymentSecretOpt: uint256 option)
                                          (associatedData: byte[])
-                                         (outgoingCLTV: uint32)
+                                         (outgoingCLTV: BlockHeightOffset32)
                                                      : Async<Result<ActiveChannel, Exception>> = async {
         let connectedChannel = self.ConnectedChannel
         let peerNode = connectedChannel.PeerNode
         let channel = connectedChannel.Channel
+        let currency = (connectedChannel.Account :> IAccount).Currency
 
         let sessionKey = new NBitcoin.Key()
+
+        let! blockHeight = async {
+            let! blockHeightResponse =
+                Server.Query currency
+                    (QuerySettings.Default ServerSelectionMode.Fast)
+                    (ElectrumClient.SubscribeHeaders ())
+                    None
+            return
+                (blockHeightResponse.Height |> uint32) + outgoingCLTV.Value
+        }
 
         let tlvs =
             match paymentSecretOpt with
             | Some paymentSecret ->
-                [| HopPayloadTLV.AmountToForward amount; HopPayloadTLV.OutgoingCLTV outgoingCLTV; HopPayloadTLV.PaymentData(PaymentSecret.Create(paymentSecret), amount) |]
+                [| HopPayloadTLV.AmountToForward amount; HopPayloadTLV.OutgoingCLTV blockHeight; HopPayloadTLV.PaymentData(PaymentSecret.Create(paymentSecret), amount) |]
             | None ->
-                [| HopPayloadTLV.AmountToForward amount; HopPayloadTLV.OutgoingCLTV outgoingCLTV |]
+                [| HopPayloadTLV.AmountToForward amount; HopPayloadTLV.OutgoingCLTV blockHeight |]
 
         let realm0Data = TLVPayload(tlvs).ToBytes()
         let onionPacket = Sphinx.PacketAndSecrets.Create (sessionKey, [channel.RemoteNodeId.Value], [realm0Data], associatedData, Sphinx.PacketFiller.DeterministicPacketFiller)
 
         let channelAndAddHtlcMsgRes= 
-            channel.Channel.AddHTLC { OperationAddHTLC.Amount = amount; PaymentHash = (PaymentHash.PaymentHash paymentPreimage); Expiry = BlockHeight outgoingCLTV; Onion = onionPacket.Packet; Upstream = None; Origin = None; CurrentHeight = BlockHeight.Zero }
+            channel.Channel.AddHTLC { OperationAddHTLC.Amount = amount; PaymentHash = (PaymentHash.PaymentHash paymentPreimage); Expiry = BlockHeight blockHeight; Onion = onionPacket.Packet; Upstream = None; Origin = None; CurrentHeight = BlockHeight.Zero }
 
         match channelAndAddHtlcMsgRes with
         | Error err -> return failwith <| SPrintF1 "error executing htlc payment command: %s" err.Message
