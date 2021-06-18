@@ -271,13 +271,40 @@ type NodeClient internal (channelStore: ChannelStore, nodeMasterPrivKey: NodeMas
                 return Ok <| PendingChannel(outgoingUnfundedChannel)
     }
 
-    member internal self.SendHtlcPayment (_channelId: ChannelIdentifier)
-                                         (_transferAmount: TransferAmount)
-                                         (_paymentPreImage: uint256)
-                                         (_paymentSecret: option<uint256>)
-                                         (_associatedData: byte[])
+    member internal self.SendHtlcPayment (channelId: ChannelIdentifier)
+                                         (transferAmount: TransferAmount)
+                                         (paymentPreImage: uint256)
+                                         (paymentSecret: option<uint256>)
+                                         (associatedData: byte[])
                                              : Async<Result<unit, IErrorMsg>> = async {
-        return failwith "unimplemented"
+        let amount =
+            let btcAmount = transferAmount.ValueToSend
+            let lnAmount = int64(btcAmount * decimal DotNetLightning.Utils.LNMoneyUnit.BTC)
+            DotNetLightning.Utils.LNMoney lnAmount
+
+        let! activeChannelRes =
+            ActiveChannel.ConnectReestablish self.ChannelStore nodeMasterPrivKey channelId
+        match activeChannelRes with
+        | Error reconnectActiveChannelError ->
+            if reconnectActiveChannelError.PossibleBug then
+                let msg =
+                    SPrintF2
+                        "error connecting to peer to send monohop payment on channel %s: %s"
+                        (channelId.ToString())
+                        (reconnectActiveChannelError :> IErrorMsg).Message
+                Infrastructure.ReportWarningMessage msg
+                |> ignore<bool>
+            return Error <| (NodeSendMonoHopPaymentError.Reconnect reconnectActiveChannelError :> IErrorMsg)
+        | Ok activeChannel ->
+            let! paymentRes = activeChannel.SendHtlcPayment amount paymentPreImage paymentSecret associatedData Settings.HtlcOutgoingCLTV
+            match paymentRes with
+            | Error _sendHtlcPaymentError ->
+                return failwith "not implemented"
+            | Ok activeChannelAfterPayment ->
+                (activeChannelAfterPayment :> IDisposable).Dispose()
+                return Ok ()
+
+
     }
 
     member internal self.SendMonoHopPayment (channelId: ChannelIdentifier)

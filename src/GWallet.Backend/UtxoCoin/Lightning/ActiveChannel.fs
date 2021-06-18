@@ -3,14 +3,17 @@ namespace GWallet.Backend.UtxoCoin.Lightning
 open System
 
 open NBitcoin
+open DotNetLightning.Crypto
 open DotNetLightning.Channel
 open DotNetLightning.Utils
+open DotNetLightning.Serialization
 open DotNetLightning.Serialization.Msgs
 open ResultUtils.Portability
 
 open GWallet.Backend
 open GWallet.Backend.FSharpUtil
 open GWallet.Backend.FSharpUtil.UwpHacks
+open GWallet.Backend.UtxoCoin
 open GWallet.Backend.UtxoCoin.Lightning.Watcher
 
 type internal LockFundingError =
@@ -572,6 +575,52 @@ and internal ActiveChannel =
             | _ -> return Error <| ExpectedCommitmentSigned channelMsg
     }
 
+    member private self.RecvHtlcFulfill(): Async<Result<ActiveChannel, SendMonoHopPaymentError>> = async {
+        let connectedChannel = self.ConnectedChannel
+        let peerNode = connectedChannel.PeerNode
+        let channel = connectedChannel.Channel
+
+        let! recvChannelMsgRes = peerNode.RecvChannelMsg()
+        match recvChannelMsgRes with
+        | Error (RecvMsg _recvMsgError) -> return failwith "not implemetend"
+        | Error (ReceivedPeerErrorMessage (peerNodeAfterHtlcFulfillReceived, _errorMessage)) ->
+            let _connectedChannelAfterError = {
+                connectedChannel with
+                    PeerNode = peerNodeAfterHtlcFulfillReceived
+                    Channel = channel
+            }
+            return failwith "not implemetend"
+        | Ok (peerNodeAfterHtlcFulfillReceived, channelMsg) ->
+            match channelMsg with
+            | :? UpdateFulfillHTLCMsg as theirFulfillMsg ->
+                let channelAfterFulfillMsgRes =
+                    channel.Channel.ApplyUpdateFulfillHTLC theirFulfillMsg
+                match channelAfterFulfillMsgRes with
+                | Error err ->
+                    return failwith (SPrintF1 "not implemetend %s" err.Message)
+                | Ok channelAfterFulfillMsg ->
+                    let connectedChannelAfterFulfillMsg = {
+                        connectedChannel with
+                            PeerNode = peerNodeAfterHtlcFulfillReceived
+                            Channel = 
+                                {
+                                    Channel = channelAfterFulfillMsg
+                                }
+                    }
+                    connectedChannelAfterFulfillMsg.SaveToWallet()
+
+                    let activeChannel = { ConnectedChannel = connectedChannelAfterFulfillMsg }
+                    let! activeChannelAfterCommitReceivedRes = activeChannel.RecvCommit()
+                    match activeChannelAfterCommitReceivedRes with
+                    | Error _err -> return failwith "not implemetend"
+                    | Ok activeChannelAfterCommitReceived ->
+                        let! activeChannelAfterCommitSentRes = activeChannelAfterCommitReceived.SendCommit()
+                        match activeChannelAfterCommitSentRes with
+                        | Error _err -> return failwith "not implemetend"
+                        | Ok activeChannelAfterCommitSent -> return Ok activeChannelAfterCommitSent
+            | _ -> return failwith "not implemetend"
+    }
+
     member internal self.SendMonoHopUnidirectionalPayment (amount: LNMoney)
                                                      : Async<Result<ActiveChannel, SendMonoHopPaymentError>> = async {
         let connectedChannel = self.ConnectedChannel
@@ -605,6 +654,60 @@ and internal ActiveChannel =
                 match activeChannelAfterCommitReceivedRes with
                 | Error err -> return Error <| SendMonoHopPaymentError.RecvCommit err
                 | Ok activeChannelAfterCommitReceived -> return Ok activeChannelAfterCommitReceived
+    }
+
+    member internal self.SendHtlcPayment (amount: LNMoney)
+                                         (paymentPreimage: uint256)
+                                         (paymentSecretOpt: uint256 option)
+                                         (associatedData: byte[])
+                                         (outgoingCLTV: uint32)
+                                                     : Async<Result<ActiveChannel, Exception>> = async {
+        let connectedChannel = self.ConnectedChannel
+        let peerNode = connectedChannel.PeerNode
+        let channel = connectedChannel.Channel
+
+        let sessionKey = new NBitcoin.Key()
+
+        let tlvs =
+            match paymentSecretOpt with
+            | Some paymentSecret ->
+                [| HopPayloadTLV.AmountToForward amount; HopPayloadTLV.OutgoingCLTV outgoingCLTV; HopPayloadTLV.PaymentData(PaymentSecret.Create(paymentSecret), amount) |]
+            | None ->
+                [| HopPayloadTLV.AmountToForward amount; HopPayloadTLV.OutgoingCLTV outgoingCLTV |]
+
+        let realm0Data = TLVPayload(tlvs).ToBytes()
+        let onionPacket = Sphinx.PacketAndSecrets.Create (sessionKey, [channel.RemoteNodeId.Value], [realm0Data], associatedData, Sphinx.PacketFiller.DeterministicPacketFiller)
+
+        let channelAndAddHtlcMsgRes= 
+            channel.Channel.AddHTLC { OperationAddHTLC.Amount = amount; PaymentHash = (PaymentHash.PaymentHash paymentPreimage); Expiry = BlockHeight outgoingCLTV; Onion = onionPacket.Packet; Upstream = None; Origin = None; CurrentHeight = BlockHeight.Zero }
+
+        match channelAndAddHtlcMsgRes with
+        | Error err -> return failwith <| SPrintF1 "error executing htlc payment command: %s" err.Message
+        | Ok (channelAfterAddHtlcPayment, addHtlcMsg) ->
+            let! peerNodeAfterAddHtlcSent = peerNode.SendMsg addHtlcMsg
+            let connectedChannelAfterAddHtlcSent = {
+                connectedChannel with
+                    PeerNode = peerNodeAfterAddHtlcSent
+                    Channel = 
+                        {
+                            Channel = channelAfterAddHtlcPayment
+                        }
+            }
+            connectedChannelAfterAddHtlcSent.SaveToWallet()
+            let activeChannel = { ConnectedChannel = connectedChannelAfterAddHtlcSent }
+            let! activeChannelAfterCommitSentRes = activeChannel.SendCommit()
+            match activeChannelAfterCommitSentRes with
+            | Error _err -> return failwith "not implemented"
+            | Ok activeChannelAfterCommitSent ->
+                let! activeChannelAfterCommitReceivedRes = activeChannelAfterCommitSent.RecvCommit()
+                match activeChannelAfterCommitReceivedRes with
+                | Error _err -> return failwith "not implemented"
+                | Ok activeChannelAfterCommitReceived ->
+                    let! activeChannelAfterNewCommitRes = activeChannelAfterCommitReceived.RecvHtlcFulfill()
+                    match (activeChannelAfterNewCommitRes) with
+                    |Error _err -> return failwith "not implemented"
+                    | Ok activeChannelAfterNewCommit ->
+                        return Ok (activeChannelAfterNewCommit)
     }
 
     member internal self.RecvMonoHopUnidirectionalPayment (monoHopUnidirectionalPaymentMsg: MonoHopUnidirectionalPaymentMsg)
