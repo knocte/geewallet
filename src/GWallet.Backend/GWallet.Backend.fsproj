@@ -89,6 +89,7 @@
     <Compile Include="UtxoCoin\Lightning\ChannelManagement.fs" />
     <Compile Include="UtxoCoin\Lightning\ForceCloseTransaction.fs" />
     <Compile Include="UtxoCoin\Lightning\BreachDataManagement.fs" />
+    <Compile Include="UtxoCoin\Lightning\Watcher\TowerClient.fs" />
     <Compile Include="UtxoCoin\Lightning\Network.fs" />
     <Compile Include="UtxoCoin\Lightning\MsgStream.fs" />
     <Compile Include="UtxoCoin\Lightning\PeerNode.fs" />
@@ -119,16 +120,55 @@
     <Reference Include="FSharp.Data">
       <HintPath>..\..\packages\FSharp.Data.3.0.0\lib\net45\FSharp.Data.dll</HintPath>
     </Reference>
+    <Reference Include="MessagePack">
+      <HintPath>..\..\packages\MessagePack.2.2.85\lib\netstandard2.0\MessagePack.dll</HintPath>
+    </Reference>
+    <Reference Include="MessagePack.Annotations">
+      <HintPath>..\..\packages\MessagePack.Annotations.2.2.85\lib\netstandard2.0\MessagePack.Annotations.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Bcl.AsyncInterfaces">
+      <HintPath>..\..\packages\Microsoft.Bcl.AsyncInterfaces.5.0.0\lib\net461\Microsoft.Bcl.AsyncInterfaces.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.VisualStudio.Threading">
+      <HintPath>..\..\packages\Microsoft.VisualStudio.Threading.16.9.60\lib\net472\Microsoft.VisualStudio.Threading.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.VisualStudio.Validation">
+      <HintPath>..\..\packages\Microsoft.VisualStudio.Validation.16.8.33\lib\netstandard2.0\Microsoft.VisualStudio.Validation.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Win32.Registry">
+      <HintPath>..\..\packages\Microsoft.Win32.Registry.5.0.0\lib\net461\Microsoft.Win32.Registry.dll</HintPath>
+    </Reference>
     <Reference Include="mscorlib" />
+    <Reference Include="Nerdbank.Streams">
+      <HintPath>..\..\packages\Nerdbank.Streams.2.6.81\lib\netstandard2.0\Nerdbank.Streams.dll</HintPath>
+    </Reference>
+    <Reference Include="StreamJsonRpc">
+      <HintPath>..\..\packages\StreamJsonRpc.2.8.21\lib\netstandard2.0\StreamJsonRpc.dll</HintPath>
+    </Reference>
     <Reference Include="System" />
+    <Reference Include="System.Collections.Immutable">
+      <HintPath>..\..\packages\System.Collections.Immutable.5.0.0\lib\net461\System.Collections.Immutable.dll</HintPath>
+    </Reference>
     <Reference Include="System.Core" />
+    <Reference Include="System.Diagnostics.DiagnosticSource">
+      <HintPath>..\..\packages\System.Diagnostics.DiagnosticSource.5.0.1\lib\net46\System.Diagnostics.DiagnosticSource.dll</HintPath>
+    </Reference>
     <Reference Include="System.Net.Sockets">
       <HintPath>..\..\packages\System.Net.Sockets.4.3.0\lib\net46\System.Net.Sockets.dll</HintPath>
       <Private>True</Private>
     </Reference>
     <Reference Include="System.Numerics" />
     <Reference Include="System.Runtime.CompilerServices.Unsafe">
-      <HintPath>..\..\packages\System.Runtime.CompilerServices.Unsafe.4.5.3\lib\net461\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
+      <HintPath>..\..\packages\System.Runtime.CompilerServices.Unsafe.5.0.0\lib\net45\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Security.AccessControl">
+      <HintPath>..\..\packages\System.Security.AccessControl.5.0.0\lib\net461\System.Security.AccessControl.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Security.Principal.Windows">
+      <HintPath>..\..\packages\System.Security.Principal.Windows.5.0.0\lib\net461\System.Security.Principal.Windows.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Threading.Tasks.Dataflow">
+      <HintPath>..\..\packages\System.Threading.Tasks.Dataflow.5.0.0\lib\net461\System.Threading.Tasks.Dataflow.dll</HintPath>
     </Reference>
     <Reference Include="System.Xml.Linq" />
     <Reference Include="Common.Logging.Core">
@@ -138,7 +178,7 @@
       <HintPath>..\..\packages\Portable.BouncyCastle.1.8.6.7\lib\net40\BouncyCastle.Crypto.dll</HintPath>
     </Reference>
     <Reference Include="Newtonsoft.Json">
-      <HintPath>..\..\packages\Newtonsoft.Json.11.0.2\lib\net45\Newtonsoft.Json.dll</HintPath>
+      <HintPath>..\..\packages\Newtonsoft.Json.12.0.2\lib\net45\Newtonsoft.Json.dll</HintPath>
     </Reference>
     <Reference Include="System.Runtime.InteropServices.RuntimeInformation">
       <HintPath>..\..\packages\System.Runtime.InteropServices.RuntimeInformation.4.3.0\lib\net45\System.Runtime.InteropServices.RuntimeInformation.dll</HintPath>
@@ -148,10 +188,10 @@
     </Reference>
     <Reference Include="System.Configuration" />
     <Reference Include="System.Memory">
-      <HintPath>..\..\packages\System.Memory.4.5.3\lib\netstandard2.0\System.Memory.dll</HintPath>
+      <HintPath>..\..\packages\System.Memory.4.5.4\lib\net461\System.Memory.dll</HintPath>
     </Reference>
     <Reference Include="System.Buffers">
-      <HintPath>..\..\packages\System.Buffers.4.5.0\lib\netstandard1.1\System.Buffers.dll</HintPath>
+      <HintPath>..\..\packages\System.Buffers.4.5.1\lib\net461\System.Buffers.dll</HintPath>
     </Reference>
     <Reference Include="System.Security.Cryptography.Encoding">
       <HintPath>..\..\packages\System.Security.Cryptography.Encoding.4.3.0\lib\net46\System.Security.Cryptography.Encoding.dll</HintPath>
@@ -165,7 +205,9 @@
     <Reference Include="System.Security.Cryptography.X509Certificates">
       <HintPath>..\..\packages\System.Security.Cryptography.X509Certificates.4.3.0\lib\net46\System.Security.Cryptography.X509Certificates.dll</HintPath>
     </Reference>
-    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Net.Http">
+      <Private>True</Private>
+    </Reference>
     <Reference Include="NBitcoin.Altcoins">
       <HintPath>..\..\packages\NBitcoin.Altcoins.2.0.5.1\lib\net452\NBitcoin.Altcoins.dll</HintPath>
     </Reference>
@@ -173,10 +215,10 @@
       <HintPath>..\..\packages\NBitcoin.5.0.75\lib\net461\NBitcoin.dll</HintPath>
     </Reference>
     <Reference Include="System.Threading.Tasks.Extensions">
-      <HintPath>..\..\packages\System.Threading.Tasks.Extensions.4.5.1\lib\portable-net45+win8+wp8+wpa81\System.Threading.Tasks.Extensions.dll</HintPath>
+      <HintPath>..\..\packages\System.Threading.Tasks.Extensions.4.5.4\lib\net461\System.Threading.Tasks.Extensions.dll</HintPath>
     </Reference>
     <Reference Include="System.IO.Pipelines">
-      <HintPath>..\..\packages\System.IO.Pipelines.4.5.3\lib\netstandard1.3\System.IO.Pipelines.dll</HintPath>
+      <HintPath>..\..\packages\System.IO.Pipelines.5.0.1\lib\net461\System.IO.Pipelines.dll</HintPath>
     </Reference>
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="FSharp.Core">
@@ -218,6 +260,7 @@
       <HintPath>..\..\packages\System.Xml.ReaderWriter.4.3.0\lib\net46\System.Xml.ReaderWriter.dll</HintPath>
     </Reference>
     <Reference Include="System.Xml" />
+    <Reference Include="WindowsBase" />
     <Reference Include="Xamarin.Essentials">
       <HintPath>..\..\packages\Xamarin.Essentials.1.0.0\lib\netstandard1.0\Xamarin.Essentials.dll</HintPath>
     </Reference>
@@ -294,6 +337,13 @@
       <HintPath>..\..\packages\DotNetLightning.Kiss.1.1.2-date20210528-0835-git-0c83757\lib\netstandard2.0\ResultUtils.dll</HintPath>
     </Reference>
   </ItemGroup>
+  <Import Project="..\..\packages\Microsoft.VisualStudio.Threading.Analyzers.16.9.60\build\Microsoft.VisualStudio.Threading.Analyzers.targets" Condition="Exists('..\..\packages\Microsoft.VisualStudio.Threading.Analyzers.16.9.60\build\Microsoft.VisualStudio.Threading.Analyzers.targets')" />
+  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
+    </PropertyGroup>
+    <Error Condition="!Exists('..\..\packages\Microsoft.VisualStudio.Threading.Analyzers.16.9.60\build\Microsoft.VisualStudio.Threading.Analyzers.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\packages\Microsoft.VisualStudio.Threading.Analyzers.16.9.60\build\Microsoft.VisualStudio.Threading.Analyzers.targets'))" />
+  </Target>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.
   <Target Name="AfterBuild">

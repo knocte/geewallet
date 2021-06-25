@@ -97,6 +97,7 @@ module Config =
     let internal NUMBER_OF_RETRIES_TO_SAME_SERVERS = 3u
 
     let internal WATCH_TOWER_REWARD_PERCENTAGE = 1m
+    let internal DEFAULT_WATCHTOWER = ("127.0.0.1", 18666)
 
     let internal GetConfigDirForThisProgram() =
         let configDir =
