@@ -117,17 +117,11 @@ newmono_test_end2end:
     - time (./configure.sh && make && make check-end2end)
 
 newmono_package:
-  image: ubuntu:20.04
+  image: $CI_REGISTRY_IMAGE/new_env:$CI_COMMIT_SHA
   stage: package
   variables:
     DEFAULT_REF_TO_NUGET_PUSH: "*rc/LN-m*"
   script:
-    - apt -y update
-    - apt install -y make git
-
-    # needed to download NuGet
-    - apt install -y curl
-
     - ./scripts/install_mono_from_microsoft_deb_packages.sh
     - ./configure.sh
     - make
