@@ -20,7 +20,7 @@ IF EXIST %ENTERPRISE% (
                 SET RUNNER=%ENTERPRISE_OLD%
             ) ELSE (
                 IF EXIST %COMMUNITY_OLD% (
-                    SET RUNNER=%COMMUNITY%
+                    SET RUNNER=%COMMUNITY_OLD%
                 ) ELSE (
                     IF EXIST %BUILDTOOLS_OLD% (
                         SET RUNNER=%BUILDTOOLS_OLD%
