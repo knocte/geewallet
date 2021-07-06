@@ -169,7 +169,8 @@ type internal FundedChannel =
                 let localParams =
                     let funding = openChannelMsg.FundingSatoshis
                     let defaultFinalScriptPubKey = ScriptManager.CreatePayoutScript account
-                    channel.LocalParams funding defaultFinalScriptPubKey false
+                    let currency = (account:>IAccount).Currency
+                    channel.LocalParams funding currency defaultFinalScriptPubKey false
                 let res, channelAfterOpenChannel =
                     let channelCmd =
                         let inputInitFundee: InputInitFundee = {

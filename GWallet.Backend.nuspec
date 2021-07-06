@@ -10,7 +10,7 @@
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <description>geewallet is a minimalistic and pragmatist crossplatform lightweight opensource brainwallet for people that want to hold the most important cryptocurrencies in the same application with ease and peace of mind.</description>
     <dependencies>
-      <dependency id="DotNetLightning.Kiss" version="1.1.2-date20210528-0835-git-0c83757" />
+      <dependency id="DotNetLightning.Kiss" version="1.1.2-date20210629-1631-git-e2e13a5" />
       <dependency id="FSharp.Core" version="4.7.0" />
       <dependency id="FSharp.Data" version="3.0.0" />
       <dependency id="HtmlAgilityPack" version="1.11.24" />

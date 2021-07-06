@@ -59,7 +59,8 @@ type internal OutgoingUnfundedChannel =
                                   : Async<Result<OutgoingUnfundedChannel, OpenChannelError>> = async {
         let hex = DataEncoders.HexEncoder()
 
-        let network = Account.GetNetwork (account:>IAccount).Currency
+        let currency = (account:>IAccount).Currency
+        let network = Account.GetNetwork currency
         let nodeId = peerNode.RemoteNodeId
         let nodeMasterPrivKey = peerNode.NodeMasterPrivKey()
         let channelIndex =
@@ -95,7 +96,7 @@ type internal OutgoingUnfundedChannel =
         let localParams =
             let funding = Money(channelCapacity.ValueToSend, MoneyUnit.BTC)
             let defaultFinalScriptPubKey = ScriptManager.CreatePayoutScript account
-            channel.LocalParams funding defaultFinalScriptPubKey true
+            channel.LocalParams funding currency defaultFinalScriptPubKey true
         let temporaryChannelId = ChannelIdentifier.NewRandom()
         let feeRate =
             channel.Channel.FeeEstimator.GetEstSatPer1000Weight ConfirmationTarget.Normal

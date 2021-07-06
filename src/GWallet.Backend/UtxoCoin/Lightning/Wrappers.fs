@@ -135,10 +135,12 @@ type MonoHopUnidirectionalChannel =
             | None -> None
 
     member internal self.LocalParams (funding: Money)
+                                     (currency: Currency)
                                      (defaultFinalScriptPubKey: Script)
                                      (isFunder: bool)
                                          : LocalParams =
         Settings.GetLocalParams funding
+                                currency
                                 defaultFinalScriptPubKey
                                 isFunder
                                 self.RemoteNodeId

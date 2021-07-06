@@ -30,12 +30,21 @@ module Settings =
         MaxClosingNegotiationIterations = 10
     }
 
-    let private SupportedFeatures =
+    let private SupportedFeatures (funding: Money) (currency: Currency) =
         let featureBits = FeatureBits.Zero
         featureBits.SetFeature Feature.OptionDataLossProtect FeaturesSupport.Optional true
+        if currency = Currency.LTC then
+            let featureType =
+                if funding > ChannelConstants.MAX_FUNDING_SATOSHIS then
+                    FeaturesSupport.Mandatory
+                else
+                    FeaturesSupport.Optional
+
+            featureBits.SetFeature Feature.OptionSupportLargeChannel featureType true
         featureBits
 
     let internal GetLocalParams (funding: Money)
+                                (currency: Currency)
                                 (defaultFinalScriptPubKey: Script)
                                 (isFunder: bool)
                                 (remoteNodeId: NodeId)
@@ -52,5 +61,5 @@ module Settings =
             MaxAcceptedHTLCs = uint16 10
             IsFunder = isFunder
             DefaultFinalScriptPubKey = defaultFinalScriptPubKey
-            Features = SupportedFeatures
+            Features = SupportedFeatures funding currency
         }
